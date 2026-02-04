@@ -1,6 +1,7 @@
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import Cart from "../models/Cart.js";
 
 // Register a new user
 export const register = async (req , res) => {
@@ -16,6 +17,16 @@ export const register = async (req , res) => {
         const hashedPassword = await bcrypt.hash(password, 12);
         const newUser = new User({ name, email, password: hashedPassword, isAdmin });
         await newUser.save();
+        
+        // create an empty cart only for user
+        if (!isAdmin) {
+      const newCart = new Cart({
+        userId: newUser._id,
+        items: [],
+      });
+      await newCart.save();
+    }
+        
         res.status(201).json({ message: "User registered successfully" });
     } catch (error) {
         res.status(500).json({ message: error.message });

@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 
 export const verifyToken = (req, res, next) => {
+  
   const authHeader = req.headers.authorization;
 
   if (!authHeader)
@@ -8,22 +9,32 @@ export const verifyToken = (req, res, next) => {
 
   const token = authHeader.split(" ")[1]; // Bearer <token>
 
+   if (!token) {
+    return res.status(401).json({ message: "Access denied: Token missing" });
+  }
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded; // id + isAdmin
     next();
   } catch (error) {
+    console.error("verifyToken error:", error.message);
     res.status(401).json({ message: "Invalid token" });
   }
 };
 
 // Middleware to check admin privileges
 export const verifyAdmin = (req, res, next) => {
-  verifyToken(req, res, () => {
-    if (req.user.isAdmin) {
-      next();
-    } else {
-      res.status(403).json({ message: "Admin access required" });
-    }
-  });
+
+   if (!req.user) {
+    return res.status(401).json({ message: "Access denied: User not authenticated" });
+  }
+
+  if (req.user && req.user.isAdmin) {
+    console.log("verifyAdmin -> Admin access granted");
+    next();
+  } else {
+    console.log("verifyAdmin -> Access denied for non-admin user");
+    res.status(403).json({ message: "Admin access required" });
+  }
 };

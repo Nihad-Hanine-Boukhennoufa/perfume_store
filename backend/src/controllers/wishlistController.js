@@ -66,3 +66,20 @@ export const removeFromWishlist = async (req, res, next) => {
     next(err);
   }
 };
+
+// Clear all products from wishlist
+export const clearWishlist = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+
+    const wishlist = await Wishlist.findOne({ userId });
+    if (!wishlist) return res.status(404).json({ success: false, message: "Wishlist not found" });
+
+    wishlist.items = []; 
+    await wishlist.save();
+
+    res.status(200).json({ success: true, message: "Wishlist has been cleared", data: wishlist });
+  } catch (err) {
+    next(err);
+  }
+};

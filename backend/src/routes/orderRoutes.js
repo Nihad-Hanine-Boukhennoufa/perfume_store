@@ -4,8 +4,8 @@ import { verifyToken, verifyAdmin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-router.post("/createOrder", verifyToken, createOrder);
-router.get("/getMyOrders", verifyToken, getMyOrders);
-router.get("/getAllOrders", verifyToken, verifyAdmin, getAllOrders);
+router.post("/", verifyToken, createOrder);
+router.get("/myOrders", verifyToken, getMyOrders);
+router.get("/orders", verifyToken, verifyAdmin, getAllOrders);
 
 export default router;

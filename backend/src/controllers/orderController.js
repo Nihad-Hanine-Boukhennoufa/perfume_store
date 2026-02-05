@@ -2,8 +2,8 @@ import Order from "../models/Order.js";
 import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
 
-// Create a new order
-export const createOrder = async (req, res) => {
+// Create order
+export const createOrder = async (req, res, next) => {
   try {
     const { buyNowProductId, buyNowQuantity, selectedItems, buyAll } = req.body;
     const userId = req.user.id;
@@ -13,10 +13,12 @@ export const createOrder = async (req, res) => {
     // Buy Now
     if (buyNowProductId) {
       const product = await Product.findById(buyNowProductId);
-      if (!product) return res.status(404).json({ message: "Product not found" });
+      if (!product) return res.status(404).json({ success: false, message: "Product not found" });
 
-      if (buyNowQuantity > product.stock)
+      const quantity = buyNowQuantity || 1;
+      if (quantity > product.stock)
         return res.status(400).json({
+          success: false,
           message: `Not enough stock for ${product.name}. Available: ${product.stock}`,
         });
 
@@ -29,20 +31,27 @@ export const createOrder = async (req, res) => {
     // Buy selected items from cart
     } else if (selectedItems && selectedItems.length > 0) {
       const cart = await Cart.findOne({ userId }).populate("items.productId");
-      if (!cart || cart.items.length === 0)
-        return res.status(400).json({ message: "Cart is empty" });
 
-      for (const selected of selectedItems) {
+      if (!cart || cart.items.length === 0)
+        return res.status(400).json({ success: false, message: "Cart is empty" });
+
+      for (const sel of selectedItems) {
+
+        if (!sel.productId || sel.quantity < 1) continue;
+
         const cartItem = cart.items.find(
-          (item) => item.productId._id.toString() === selected.productId
+          (item) => item.productId._id.toString() === sel.productId
         );
+        if (!cartItem) continue;
         if (cartItem) {
-          if (selected.quantity > cartItem.productId.stock) {
-            return res.status(400).json({ message: `Not enough stock for ${cartItem.productId.name}. Available: ${cartItem.productId.stock}` });
-          }
+          if (sel.quantity > cartItem.productId.stock)
+          return res.status(400).json({
+            success: false,
+            message: `Not enough stock for ${cartItem.productId.name}. Available: ${cartItem.productId.stock}`,
+          });
           items.push({
             productId: cartItem.productId._id,
-            quantity: selected.quantity || cartItem.quantity,
+            quantity: sel.quantity || cartItem.quantity,
             price: cartItem.productId.price,
           });
         }
@@ -64,11 +73,12 @@ export const createOrder = async (req, res) => {
     } else if (buyAll === true) {
       const cart = await Cart.findOne({ userId }).populate("items.productId");
       if (!cart || cart.items.length === 0)
-        return res.status(400).json({ message: "Cart is empty" });
+        return res.status(400).json({ success: false, message: "Cart is empty" });
 
       for (const item of cart.items) {
         if (item.quantity > item.productId.stock)
           return res.status(400).json({
+            success: false,
             message: `Not enough stock for ${item.productId.name}. Available: ${item.productId.stock}`,
           });
       }
@@ -84,13 +94,13 @@ export const createOrder = async (req, res) => {
       await cart.save();
 
     } else {
-      return res.status(400).json({ message: "No products selected for order" });
+      return res.status(400).json({success: false, message: "No products selected for order" });
     }
 
     // update product stock 
     const bulkOps = items.map((item) => ({
       updateOne: {
-        filter: { _id: item.productId, stock: { $gte: item.quantity } }, // شرط لمنع السالب
+        filter: { _id: item.productId, stock: { $gte: item.quantity } },
         update: { $inc: { stock: -item.quantity } },
       },
     }));
@@ -114,17 +124,17 @@ if (result.modifiedCount !== items.length) {
 
     await order.save();
     
-    res.status(201).json(order);
-
+    
+    res.status(201).json({ success: true, data: order, message: "Order created successfully" });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    next(err);
   }
 };
 
 
 
 
-export const getMyOrders = async (req, res) => {
+export const getMyOrders = async (req, res, next) => {
   try {
 
     const { status } = req.query; 
@@ -133,17 +143,17 @@ export const getMyOrders = async (req, res) => {
 
     const orders = await Order.find({ userId: req.user.id })
     .sort({ createdAt: -1 })
-    .populate("items.productId");
-    res.status(200).json(orders);
-
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+    .populate("items.productId", "name price image")
+    res.status(200).json({
+      success: true,
+      data: orders
+    });
+  } catch (err) { next(err); }
 };
 
 
 
-export const getAllOrders = async (req, res) => {
+export const getAllOrders = async (req, res, next) => {
   try {
 
     const { status } = req.query;
@@ -154,9 +164,9 @@ export const getAllOrders = async (req, res) => {
       .sort({ createdAt: -1 })
       .populate("items.productId");
 
-    res.status(200).json(orders);
-
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+    res.status(200).json({
+      success: true,
+      data: orders
+    });
+  } catch (err) { next(err); }
 };

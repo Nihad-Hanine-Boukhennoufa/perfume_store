@@ -12,9 +12,9 @@ import { verifyToken, verifyAdmin } from '../middleware/authMiddleware.js';
 const router = express.Router();
 
 router.get('/', getProducts);
-router.get('/getProduct/:id', getProduct);
-router.post('/createProduct',verifyToken, verifyAdmin, upload.single('image'), createProduct);
-router.put('/updateProduct/:id',verifyToken, verifyAdmin, upload.single('image'),updateProduct);
-router.delete('/deleteProduct/:id',verifyToken, verifyAdmin, deleteProduct);
+router.get('/:id', getProduct);
+router.post('/',verifyToken, verifyAdmin, upload.single('image'), createProduct);
+router.put('/:id',verifyToken, verifyAdmin, upload.single('image'),updateProduct);
+router.delete('/:id',verifyToken, verifyAdmin, deleteProduct);
 
 export default router;

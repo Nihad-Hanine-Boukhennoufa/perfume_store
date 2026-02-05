@@ -18,7 +18,7 @@ export const verifyToken = (req, res, next) => {
     req.user = decoded; // id + isAdmin
     next();
   } catch (error) {
-    console.error("verifyToken error:", error.message);
+    ;
     res.status(401).json({ message: "Invalid token" });
   }
 };
@@ -26,15 +26,13 @@ export const verifyToken = (req, res, next) => {
 // Middleware to check admin privileges
 export const verifyAdmin = (req, res, next) => {
 
-   if (!req.user) {
-    return res.status(401).json({ message: "Access denied: User not authenticated" });
+  if (!req.user) {
+    return res.status(401).json({ message: "Not authenticated" });
   }
 
-  if (req.user && req.user.isAdmin) {
-    console.log("verifyAdmin -> Admin access granted");
-    next();
-  } else {
-    console.log("verifyAdmin -> Access denied for non-admin user");
-    res.status(403).json({ message: "Admin access required" });
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ message: "Admin access required" });
   }
+
+  next();
 };

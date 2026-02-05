@@ -6,13 +6,20 @@ const cartSchema = new mongoose.Schema(
     items: [
       {
         productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
-        quantity: Number,
-        price: Number,
+        quantity: { type: Number, default: 1 },
+        price: { type: Number, default: 0 },
       },
     ],
-    total: Number, 
+    total: { type: Number, default: 0 }, 
   },
   { timestamps: true }
 );
+cartSchema.pre("save", function () {
+  this.total = this.items.reduce(
+    (acc, item) => acc + item.price * item.quantity,
+    0
+  );
+});
+
 
 export default mongoose.model("Cart", cartSchema);

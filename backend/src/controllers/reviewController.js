@@ -1,6 +1,34 @@
 import Review from "../models/Review.js";
 import Product from "../models/Product.js";
+import mongoose from "mongoose";
 
+// Helper function to update product rating and reviews count after adding/deleting a review
+export const updateProductRating = async (productId) => {
+  const stats = await Review.aggregate([
+    { $match: { productId: new mongoose.Types.ObjectId(productId) } },
+    {
+      $group: {
+        _id: "$productId",
+        avgRating: { $avg: "$rating" },
+        totalReviews: { $sum: 1 },
+      },
+    },
+  ]);
+
+  if (stats.length > 0) {
+    await Product.findByIdAndUpdate(productId, {
+      rating: stats[0].avgRating.toFixed(1),
+      reviewsCount: stats[0].totalReviews,
+    });
+  } else {
+    await Product.findByIdAndUpdate(productId, {
+      rating: 0,
+      reviewsCount: 0,
+    });
+  }
+};
+
+// Add a review for a product
 export const addReview = async (req, res, next) => {
   try {
     const { productId, rating, comment } = req.body;
@@ -29,6 +57,7 @@ export const addReview = async (req, res, next) => {
     });
 
     await review.save();
+    await updateProductRating(productId);
 
     res.status(201).json({
       success: true,
@@ -65,12 +94,20 @@ export const deleteReview = async (req, res, next) => {
     const { reviewId } = req.params;
     const userId = req.user.id;
 
-    const review = await Review.findOne({ _id: reviewId, userId });
+    const reviewObjectId = new mongoose.Types.ObjectId(reviewId);
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+
+
+    const review = await Review.findOne({ _id: reviewObjectId, userId: userObjectId });
     if (!review) {
       return res.status(404).json({ success: false, message: "Review not found" });
     }
 
+    const productId = review.productId;
+
     await review.deleteOne();
+
+    await updateProductRating(productId);
 
     res.status(200).json({
       success: true,
@@ -80,4 +117,5 @@ export const deleteReview = async (req, res, next) => {
     next(err);
   }
 };
+
 

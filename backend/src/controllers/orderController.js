@@ -162,11 +162,115 @@ export const getAllOrders = async (req, res, next) => {
 
     const orders = await Order.find(filter)
       .sort({ createdAt: -1 })
-      .populate("items.productId");
+      .populate("items.productId", "name price image");
 
     res.status(200).json({
       success: true,
-      data: orders
+      count: orders.length,
+      data: orders,
     });
+
   } catch (err) { next(err); }
+};
+
+
+// User can cancel order if it's still pending
+export const cancelOrder = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id;
+
+    const order = await Order.findOne({ _id: orderId, userId });
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    if (order.status !== "pending") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot cancel this order",
+      });
+    }
+
+    // Restore product stock
+    const bulkOps = order.items.map(item => ({
+      updateOne: {
+        filter: { _id: item.productId },
+        update: { $inc: { stock: item.quantity } },
+      }
+    }));
+
+    await Product.bulkWrite(bulkOps);
+
+    // Update order status to cancelled  
+    order.status = "cancelled";
+    await order.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Order cancelled successfully",
+      data: order
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Admin can update order status
+export const adminUpdateOrderStatus = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+    const { newStatus } = req.body;
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    if (!['pending', 'shipped', 'delivered', 'cancelled'].includes(newStatus)) {
+      return res.status(400).json({ success: false, message: "Invalid status" });
+    }
+
+    order.status = newStatus;
+    await order.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Order status updated to ${newStatus}`,
+      data: order
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Admin can delete order if it's delivered or cancelled
+export const adminDeleteOrder = async (req, res, next) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    if (!['delivered', 'cancelled'].includes(order.status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Can only delete delivered or cancelled orders"
+      });
+    }
+
+    await order.deleteOne();
+
+    res.status(200).json({
+      success: true,
+      message: "Order deleted permanently"
+    });
+
+  } catch (err) {
+    next(err);
+  }
 };

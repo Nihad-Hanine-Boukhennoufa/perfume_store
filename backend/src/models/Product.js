@@ -8,6 +8,7 @@ const productSchema = new mongoose.Schema({
     category: { type: String, required: true },
     stock: { type: Number, required: true, min: 0 },
     image: { type: String, required: true },
+    imagePublicId: { type: String, required: true },
     rating: { type: Number, default: 0, max: 5 },
     reviewsCount: { type: Number, default: 0 }
 }, { timestamps: true });

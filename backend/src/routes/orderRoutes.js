@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.post("/", verifyToken, createOrder);
 router.get("/myOrders", verifyToken, getMyOrders);
-router.get("/orders", verifyToken, verifyAdmin, getAllOrders);
+router.get("/", verifyToken, verifyAdmin, getAllOrders);
 router.put("/cancel/:orderId", verifyToken, cancelOrder);
 router.put("/updateStatus/:orderId", verifyToken, verifyAdmin, adminUpdateOrderStatus);
 router.delete("/delete/:orderId", verifyToken, verifyAdmin, adminDeleteOrder);

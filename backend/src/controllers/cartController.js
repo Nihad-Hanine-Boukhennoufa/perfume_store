@@ -46,6 +46,31 @@ export const addToCart = async (req, res, next) => {
   }
 };
 
+// Update quantity of a cart item
+export const updateCartItem = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { productId } = req.params;
+    const { quantity } = req.body;
+
+    if (quantity < 1) return res.status(400).json({ success: false, message: "Quantity must be at least 1" });
+
+    const cart = await Cart.findOne({ userId });
+    if (!cart) return res.status(404).json({ success: false, message: "Cart not found" });
+
+    const itemIndex = cart.items.findIndex(item => item.productId.toString() === productId);
+    if (itemIndex === -1) return res.status(404).json({ success: false, message: "Product not in cart" });
+
+    cart.items[itemIndex].quantity = quantity;
+    await cart.save();
+
+    const populatedCart = await cart.populate("items.productId", "name brand price image");
+    res.status(200).json({ success: true, data: populatedCart });
+  } catch (err) {
+    next(err);
+  }
+};
+
 
 // Get user cart
 

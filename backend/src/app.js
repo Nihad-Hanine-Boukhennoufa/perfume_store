@@ -7,6 +7,7 @@ import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import cartRoutes from "./routes/cartRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
@@ -32,8 +33,9 @@ app.use("/products", productRoutes);
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 app.use("/cart", cartRoutes);
-app.use("/wishlist", wishlistRoutes);
 app.use("/orders", orderRoutes);
+app.use("/admin", adminRoutes);
+app.use("/wishlist", wishlistRoutes);
 app.use("/reviews", reviewRoutes);
 
 // Error handler middleware

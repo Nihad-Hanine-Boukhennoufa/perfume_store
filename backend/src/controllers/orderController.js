@@ -1,6 +1,40 @@
 import Order from "../models/Order.js";
 import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
+import { createTransaction } from "../services/transactionService.js";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const VALID_STATUSES = ["pending", "shipped", "delivered", "cancelled"];
+const FINALIZED_STATUS = "delivered";
+
+// ─── Stock Helpers ────────────────────────────────────────────────────────────
+
+// Decrements stock atomically. Returns false if any item lacks sufficient stock.
+const decrementStock = async (items) => {
+  const bulkOps = items.map((item) => ({
+    updateOne: {
+      filter: { _id: item.productId, stock: { $gte: item.quantity } },
+      update: { $inc: { stock: -item.quantity } },
+    },
+  }));
+
+  const result = await Product.bulkWrite(bulkOps);
+  return result.modifiedCount === items.length;
+};
+
+// Restores stock atomically (used when an order is cancelled).
+const restoreStock = async (items) => {
+  const bulkOps = items.map((item) => ({
+    updateOne: {
+      filter: { _id: item.productId },
+      update: { $inc: { stock: item.quantity } },
+    },
+  }));
+
+  await Product.bulkWrite(bulkOps);
+};
+
+// ─── Controllers ──────────────────────────────────────────────────────────────
 
 // Create order
 export const createOrder = async (req, res, next) => {
@@ -61,7 +95,7 @@ export const createOrder = async (req, res, next) => {
         return res.status(400)
         .json({ message: "Selected products not found in cart" });
 
-      // Remove ordered items from cart
+      // Remove only the ordered items from the cart
       cart.items = cart.items.filter(
         (item) => !items.some(
           (i) => i.productId.toString() === item.productId._id.toString()
@@ -97,40 +131,23 @@ export const createOrder = async (req, res, next) => {
       return res.status(400).json({success: false, message: "No products selected for order" });
     }
 
-    // update product stock 
-    const bulkOps = items.map((item) => ({
-      updateOne: {
-        filter: { _id: item.productId, stock: { $gte: item.quantity } },
-        update: { $inc: { stock: -item.quantity } },
-      },
-    }));
+    // ── Atomic stock decrement ──
+    const stockOk = await decrementStock(items);
+    if (!stockOk)
+      return res.status(400).json({ success: false, message: "Not enough stock for some products" });
 
-    const result = await Product.bulkWrite(bulkOps);
-
-
-if (result.modifiedCount !== items.length) {
-  return res.status(400).json({ message: "Not enough stock for some products" });
-}
 
     // calculate total
     const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
     // create order
-    const order = new Order({
-      userId,
-      items,
-      total,
-    });
-
-    await order.save();
-    
+    const order = await Order.create({ userId, items, total });
     
     res.status(201).json({ success: true, data: order, message: "Order created successfully" });
   } catch (err) {
     next(err);
   }
 };
-
 
 
 
@@ -174,13 +191,10 @@ export const getAllOrders = async (req, res, next) => {
 };
 
 
-// User can cancel order if it's still pending
+// User cancel order if it's still pending
 export const cancelOrder = async (req, res, next) => {
   try {
-    const { orderId } = req.params;
-    const userId = req.user.id;
-
-    const order = await Order.findOne({ _id: orderId, userId });
+    const order = await Order.findOne({ _id: req.params.orderId, userId: req.user.id });
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
@@ -188,19 +202,13 @@ export const cancelOrder = async (req, res, next) => {
     if (order.status !== "pending") {
       return res.status(400).json({
         success: false,
-        message: "Cannot cancel this order",
+        message: "Only pending orders can be cancelled",
       });
     }
 
     // Restore product stock
-    const bulkOps = order.items.map(item => ({
-      updateOne: {
-        filter: { _id: item.productId },
-        update: { $inc: { stock: item.quantity } },
-      }
-    }));
+    await restoreStock(order.items);
 
-    await Product.bulkWrite(bulkOps);
 
     // Update order status to cancelled  
     order.status = "cancelled";
@@ -223,17 +231,36 @@ export const adminUpdateOrderStatus = async (req, res, next) => {
     const { orderId } = req.params;
     const { newStatus } = req.body;
 
+    if (!VALID_STATUSES.includes(newStatus))
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}`,
+      });
+
     const order = await Order.findById(orderId);
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }
 
-    if (!['pending', 'shipped', 'delivered', 'cancelled'].includes(newStatus)) {
-      return res.status(400).json({ success: false, message: "Invalid status" });
-    }
-
+    const previousStatus = order.status;
     order.status = newStatus;
     await order.save();
+
+    // ── Transaction trigger ───
+    const isNewlyDelivered =
+      newStatus === FINALIZED_STATUS && previousStatus !== FINALIZED_STATUS;
+
+    if (isNewlyDelivered) {
+      createTransaction({
+        orderId: order._id,
+        userId:  order.userId,
+        amount:  order.total,
+      }).catch((err) => {
+        console.error(`[TransactionService] Failed to record transaction for order ${order._id}:`, err.message);
+      });
+    }
+
+
 
     res.status(200).json({
       success: true,
@@ -249,9 +276,8 @@ export const adminUpdateOrderStatus = async (req, res, next) => {
 // Admin can delete order if it's delivered or cancelled
 export const adminDeleteOrder = async (req, res, next) => {
   try {
-    const { orderId } = req.params;
-
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(req.params.orderId);
+    
     if (!order) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }

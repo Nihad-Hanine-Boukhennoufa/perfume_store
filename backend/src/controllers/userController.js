@@ -89,6 +89,14 @@ export const updateUser = async (req, res) => {
       });
     }
 
+    // Prevent empty update
+    if (!name && !email && !password && !req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No data provided to update",
+      });
+    }
+
     // Check if email is being changed and if it's already taken
     if (email && email !== user.email) {
       const existingUser = await User.findOne({ email });
@@ -101,16 +109,25 @@ export const updateUser = async (req, res) => {
           message: "Email already exists",
         });
       }
+
       user.email = email;
+    
     }
+
 
     if (name) user.name = name;
 
-    // Handle image upload
+    // Image update
+
     if (req.file) {
-      // Delete old image from Cloudinary if exists
-        if (req.file) await deleteCloudinaryImage(req.file.filename);
+      // Delete old image if exists
+      if (user.imagePublicId) {
+        await deleteCloudinaryImage(user.imagePublicId);
+      }
+
       user.image = req.file.path;
+      user.imagePublicId = req.file.filename;
+
     }
 
     // Hash new password if provided
@@ -173,9 +190,10 @@ export const updateUserRole = async (req, res) => {
     user.role = role;
     await user.save();
 
-    // Create cart if switching from admin to user
+    // Create cart if switching from admin → user
     if (oldRole === "admin" && role === "user") {
       const existingCart = await Cart.findOne({ userId: user._id });
+
       if (!existingCart) {
         await Cart.create({
           userId: user._id,
@@ -219,9 +237,17 @@ export const deleteUser = async (req, res) => {
     }
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    if (user.imagePublicId) await deleteCloudinaryImage(user.imagePublicId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.imagePublicId) {
+      await deleteCloudinaryImage(user.imagePublicId);
+    }
 
     // Delete associated cart if exists
     await Cart.deleteOne({ userId: user._id });

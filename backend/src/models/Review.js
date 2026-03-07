@@ -23,8 +23,16 @@ const reviewSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    isEdited: {
+            type: Boolean,
+            default: false,
+        },
   },
   { timestamps: true }
 );
+
+reviewSchema.index({ userId: 1, productId: 1 }, { unique: true });
+reviewSchema.index({ productId: 1, createdAt: -1 });
+reviewSchema.index({ userId: 1, createdAt: -1 });
 
 export default mongoose.model("Review", reviewSchema);

@@ -10,6 +10,7 @@ import orderRoutes from "./routes/orderRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
+import brandRoutes from "./routes/brandRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
 // ES Module --dirname equivalent
@@ -37,6 +38,7 @@ app.use("/orders", orderRoutes);
 app.use("/admin", adminRoutes);
 app.use("/wishlist", wishlistRoutes);
 app.use("/reviews", reviewRoutes);
+app.use("/brands", brandRoutes);
 
 // Error handler middleware
 app.use(errorHandler);

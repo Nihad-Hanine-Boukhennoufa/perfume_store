@@ -7,10 +7,6 @@ import { deleteCloudinaryImage } from "../utils/cloudinaryHelper.js";
 // Register a new user
 export const register = async (req, res, next) => {
   try {
-    console.log("=== REGISTER REQUEST ===");
-    console.log("Body:", req.body);
-    console.log("File:", req.file);
-    console.log("=======================");
 
     const { name, email, password, role } = req.body;
 
@@ -40,17 +36,8 @@ export const register = async (req, res, next) => {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Get Cloudinary image URL and public_id if file was uploaded
-    const imagePath = req.file ? req.file.path : null;
-    const imagePublicId = req.file ? req.file.filename : null;
-
-    console.log("Creating user with:", {
-      name,
-      email,
-      role: role || "user",
-      hasImage: !!imagePath,
-      imagePath,
-      imagePublicId
-    });
+    const imagePath = req.file?.path || null;
+    const imagePublicId = req.file?.filename || null;
 
     // Create new user
     const newUser = new User({
@@ -92,11 +79,7 @@ export const register = async (req, res, next) => {
       await deleteCloudinaryImage(req.file.filename);
     }
     
-    console.error("=== REGISTRATION ERROR ===");
-    console.error("Error:", err);
-    console.error("Error message:", err.message);
-    console.error("Error name:", err.name);
-    console.error("=========================");
+    console.error("Registration error:", err);
     
     res.status(500).json({
       success: false,

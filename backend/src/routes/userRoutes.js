@@ -1,6 +1,6 @@
 import express from "express";
 import { verifyToken, verifyAdmin } from "../middleware/authMiddleware.js";
-import upload from "../middleware/upload.js"; 
+import uploadAvatar from "../middleware/upload.js"; 
 import {
   getAllUsers,
   getUserById,
@@ -12,7 +12,7 @@ import {
 const router = express.Router();
 
 // Public route for uploading avatar (authenticated users only)
-router.post("/upload-avatar", verifyToken, upload.single("avatar"), (req, res) => {
+router.post("/upload-avatar", verifyToken, uploadAvatar.single("avatar"), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ 
@@ -24,7 +24,8 @@ router.post("/upload-avatar", verifyToken, upload.single("avatar"), (req, res) =
     res.status(200).json({
       success: true,
       data: { 
-        imageUrl: `/uploads/${req.file.filename}` 
+          imageUrl: req.file.path,  
+          imagePublicId: req.file.filename  
       },
       message: "Image uploaded successfully"
     });
@@ -40,7 +41,7 @@ router.post("/upload-avatar", verifyToken, upload.single("avatar"), (req, res) =
 router.use(verifyToken, verifyAdmin);
 router.get("/", getAllUsers);
 router.get("/:id", getUserById);
-router.put("/:id", upload.single("image"), updateUser);
+router.put("/:id", uploadAvatar.single("image"), updateUser);
 router.patch("/:id/role", updateUserRole);
 router.delete("/:id", deleteUser);
 

@@ -21,5 +21,4 @@ cartSchema.pre("save", function () {
   );
 });
 
-
 export default mongoose.model("Cart", cartSchema);

@@ -268,3 +268,37 @@ export const deleteUser = async (req, res) => {
     });
   }
 };
+
+// Update current user's own profile
+export const updateMe = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    if (!name && !req.file) {
+      return res.status(400).json({ success: false, message: "No data provided" });
+    }
+
+    if (name) user.name = name;
+
+    if (req.file) {
+      if (user.imagePublicId) await deleteCloudinaryImage(user.imagePublicId);
+      user.image = req.file.path;
+      user.imagePublicId = req.file.filename;
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      data: { name: user.name, email: user.email, role: user.role, image: user.image },
+      message: "Profile updated successfully",
+    });
+  } catch (err) {
+    if (req.file) await deleteCloudinaryImage(req.file.filename);
+    res.status(500).json({ success: false, message: err.message || "Server error" });
+  }
+};

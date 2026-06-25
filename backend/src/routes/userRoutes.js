@@ -1,13 +1,13 @@
 import express from "express";
 import { verifyToken, verifyAdmin } from "../middleware/authMiddleware.js";
-import uploadAvatar from "../middleware/upload.js"; 
-import {
-  getAllUsers,
-  getUserById,
-  updateUser,
-  deleteUser,
-  updateUserRole,
-} from "../controllers/userController.js";
+import { uploadAvatar } from "../middleware/upload.js";
+import { 
+  getAllUsers, 
+  getUserById, 
+  updateUser, 
+  deleteUser, 
+  updateUserRole, 
+  updateMe } from "../controllers/userController.js";
 
 const router = express.Router();
 
@@ -37,11 +37,13 @@ router.post("/upload-avatar", verifyToken, uploadAvatar.single("avatar"), (req, 
   }
 });
 
-// Admin routes
+router.post("/upload-avatar", verifyToken, uploadAvatar.single("avatar"), );
+router.put("/me", verifyToken, uploadAvatar.single("image"), updateMe);
+router.put("/:id", uploadAvatar.single("image"), updateUser);
+// Admin only
 router.use(verifyToken, verifyAdmin);
 router.get("/", getAllUsers);
 router.get("/:id", getUserById);
-router.put("/:id", uploadAvatar.single("image"), updateUser);
 router.patch("/:id/role", updateUserRole);
 router.delete("/:id", deleteUser);
 

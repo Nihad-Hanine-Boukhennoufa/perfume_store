@@ -1,4 +1,4 @@
-import Brand from "../models/brandModel.js";
+import Brand from "../models/Brand.js";
 import { deleteCloudinaryImage } from "../utils/cloudinaryHelper.js";
 
 // =====================

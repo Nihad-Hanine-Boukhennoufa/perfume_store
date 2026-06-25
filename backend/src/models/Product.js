@@ -27,8 +27,8 @@ const productSchema = new mongoose.Schema({
 
     gender: { type: String, required: true, enum: ["Men", "Women", "Unisex"] },
     concentration: { type: String, required: true, enum: ["EDP", "EDT", "Perfume"] },
-    scentType: [{ type: String, required: true, enum: ["Classic", "Floral", "Woody", "Fresh", "Oriental", "Citrus", "Aquatic", "Fruity", "Leather"] }],
-    season: { type: String, required: true, enum: ["Winter", "Summer", "All Seasons"] },
+    scentType: [{ type: String, required: true, enum: ["Classic", "Floral", "Woody", "Fresh", "Oriental", "Citrus", "Aquatic", "Fruity", "Leather","Sweet", "Powdery","Spicy","Aromatic"] }],
+    season: { type: String, required: true, enum: ["Winter", "Summer","Spring", "All Seasons"] },
 
     notes: { type: [noteSchema], required: true },
     images: { type: [imageSchema], required: true },
@@ -42,7 +42,7 @@ const productSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // --- Indexes ---
-productSchema.index({ slug: 1 });
+
 productSchema.index({ price: 1 });
 productSchema.index({ gender: 1 });
 productSchema.index({ brand: 1 });
@@ -51,10 +51,10 @@ productSchema.index({ isPublished: 1, createdAt: -1 });
 productSchema.index({ brand: 1, gender: 1, price: 1 });
 productSchema.index({ name: "text", description: "text" });
 
-// --- Slug Generation ---
-productSchema.pre("validate", async function (next) {
+// --- Slug Generation (pre-validate) ---
+productSchema.pre("validate", async function () {
     // Generate slug only when name is new or modified
-    if (!this.isModified("name") && !this.isNew) return next();
+    if (!this.isModified("name") && !this.isNew) return;
 
     const Product = this.constructor;
     let baseSlug = slugify(this.name, { lower: true, strict: true });
@@ -67,14 +67,13 @@ productSchema.pre("validate", async function (next) {
     }
 
     this.slug = slug;
-    next();
 });
 
 // --- Business Rules Validation (pre-save) ---
-productSchema.pre("save", function (next) {
+productSchema.pre("save", function () {
     // 1. Ensure at least one image exists
     if (!this.images || this.images.length === 0) {
-        return next(new Error("Product must have at least one image"));
+        throw new Error("Product must have at least one image");
     }
 
     // 2. Ensure only one primary image
@@ -91,10 +90,8 @@ productSchema.pre("save", function (next) {
     // 3. Ensure note texts are unique within the product
     const texts = this.notes.map(n => n.text.toLowerCase().trim());
     if (new Set(texts).size !== texts.length) {
-        return next(new Error("Duplicate note text is not allowed"));
+        throw new Error("Duplicate note text is not allowed");
     }
-
-    next();
 });
 
 const Product = mongoose.model('Product', productSchema);

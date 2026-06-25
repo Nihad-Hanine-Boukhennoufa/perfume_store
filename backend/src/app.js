@@ -32,7 +32,6 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/users", userRoutes);
 app.use("/products", productRoutes);
 app.use("/auth", authRoutes);
-app.use("/users", userRoutes);
 app.use("/cart", cartRoutes);
 app.use("/orders", orderRoutes);
 app.use("/admin", adminRoutes);
@@ -40,7 +39,13 @@ app.use("/wishlist", wishlistRoutes);
 app.use("/reviews", reviewRoutes);
 app.use("/brands", brandRoutes);
 
-// Error handler middleware
-app.use(errorHandler);
+// Error logger
+app.use((err, req, res, next) => {
+  console.error("🔴 ERROR:", err.message);
+  console.error(err.stack);
+  next(err);
+});
 
+// Error handler
+app.use(errorHandler);
 export default app;

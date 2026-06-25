@@ -4,12 +4,26 @@ import Product from "../models/Product.js";
 import { createTransaction } from "../services/transactionService.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const VALID_STATUSES = ["pending", "shipped", "delivered", "cancelled"];
-const FINALIZED_STATUS = "delivered";
+const VALID_STATUSES      = ["pending", "shipped", "delivered", "cancelled"];
+const FINALIZED_STATUS    = "delivered";
+const STOCK_HELD_STATUSES = ["pending", "shipped"];
+
+// ─── Populate helper ──────────────────────────────────────────────────────────
+// Fix: images (plural, Cloudinary array) — "image" (singular) does not exist
+// on the product schema so it always returned undefined before.
+// brand is an ObjectId ref so we nest-populate it to get the name string.
+const PRODUCT_SELECT = "name price images stock concentration gender";
+const BRAND_POPULATE = { path: "brand", select: "name" };
+
+const populateOrders = (query) =>
+  query.populate({
+    path:     "items.productId",
+    select:   PRODUCT_SELECT,
+    populate: BRAND_POPULATE,
+  });
 
 // ─── Stock Helpers ────────────────────────────────────────────────────────────
 
-// Decrements stock atomically. Returns false if any item lacks sufficient stock.
 const decrementStock = async (items) => {
   const bulkOps = items.map((item) => ({
     updateOne: {
@@ -17,12 +31,10 @@ const decrementStock = async (items) => {
       update: { $inc: { stock: -item.quantity } },
     },
   }));
-
   const result = await Product.bulkWrite(bulkOps);
   return result.modifiedCount === items.length;
 };
 
-// Restores stock atomically (used when an order is cancelled).
 const restoreStock = async (items) => {
   const bulkOps = items.map((item) => ({
     updateOne: {
@@ -30,24 +42,23 @@ const restoreStock = async (items) => {
       update: { $inc: { stock: item.quantity } },
     },
   }));
-
   await Product.bulkWrite(bulkOps);
 };
 
-// ─── Controllers ──────────────────────────────────────────────────────────────
+// ─── Create order ─────────────────────────────────────────────────────────────
 
-// Create order
 export const createOrder = async (req, res, next) => {
   try {
     const { buyNowProductId, buyNowQuantity, selectedItems, buyAll } = req.body;
     const userId = req.user.id;
 
-    let items = [];
+    let items      = [];
+    let cartToSave = null;
 
-    // Buy Now
     if (buyNowProductId) {
       const product = await Product.findById(buyNowProductId);
-      if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+      if (!product)
+        return res.status(404).json({ success: false, message: "Product not found" });
 
       const quantity = buyNowQuantity || 1;
       if (quantity > product.stock)
@@ -56,54 +67,39 @@ export const createOrder = async (req, res, next) => {
           message: `Not enough stock for ${product.name}. Available: ${product.stock}`,
         });
 
-      items.push({
-        productId: product._id,
-        quantity: buyNowQuantity || 1,
-        price: product.price,
-      });
+      items.push({ productId: product._id, quantity, price: product.price });
 
-    // Buy selected items from cart
-    } else if (selectedItems && selectedItems.length > 0) {
+    } else if (selectedItems?.length > 0) {
       const cart = await Cart.findOne({ userId }).populate("items.productId");
-
       if (!cart || cart.items.length === 0)
         return res.status(400).json({ success: false, message: "Cart is empty" });
 
       for (const sel of selectedItems) {
-
         if (!sel.productId || sel.quantity < 1) continue;
-
         const cartItem = cart.items.find(
           (item) => item.productId._id.toString() === sel.productId
         );
         if (!cartItem) continue;
-        if (cartItem) {
-          if (sel.quantity > cartItem.productId.stock)
+        if (sel.quantity > cartItem.productId.stock)
           return res.status(400).json({
             success: false,
             message: `Not enough stock for ${cartItem.productId.name}. Available: ${cartItem.productId.stock}`,
           });
-          items.push({
-            productId: cartItem.productId._id,
-            quantity: sel.quantity || cartItem.quantity,
-            price: cartItem.productId.price,
-          });
-        }
+        items.push({
+          productId: cartItem.productId._id,
+          quantity:  sel.quantity || cartItem.quantity,
+          price:     cartItem.productId.price,
+        });
       }
 
       if (items.length === 0)
-        return res.status(400)
-        .json({ message: "Selected products not found in cart" });
+        return res.status(400).json({ success: false, message: "Selected products not found in cart" });
 
-      // Remove only the ordered items from the cart
       cart.items = cart.items.filter(
-        (item) => !items.some(
-          (i) => i.productId.toString() === item.productId._id.toString()
-        )
+        (item) => !items.some((i) => i.productId.toString() === item.productId._id.toString())
       );
-      await cart.save();
+      cartToSave = cart;
 
-    // Buy all items from cart
     } else if (buyAll === true) {
       const cart = await Cart.findOne({ userId }).populate("items.productId");
       if (!cart || cart.items.length === 0)
@@ -119,116 +115,97 @@ export const createOrder = async (req, res, next) => {
 
       items = cart.items.map((item) => ({
         productId: item.productId._id,
-        quantity: item.quantity,
-        price: item.productId.price,
+        quantity:  item.quantity,
+        price:     item.productId.price,
       }));
 
-      // Clear the cart
       cart.items = [];
-      await cart.save();
+      cartToSave = cart;
 
     } else {
-      return res.status(400).json({success: false, message: "No products selected for order" });
+      return res.status(400).json({ success: false, message: "No products selected for order" });
     }
 
-    // ── Atomic stock decrement ──
     const stockOk = await decrementStock(items);
     if (!stockOk)
       return res.status(400).json({ success: false, message: "Not enough stock for some products" });
 
+    if (cartToSave) await cartToSave.save();
 
-    // calculate total
     const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-    // create order
     const order = await Order.create({ userId, items, total });
-    
+
     res.status(201).json({ success: true, data: order, message: "Order created successfully" });
   } catch (err) {
     next(err);
   }
 };
 
-
+// ─── Get my orders ────────────────────────────────────────────────────────────
 
 export const getMyOrders = async (req, res, next) => {
   try {
-
-    const { status } = req.query; 
+    const { status } = req.query;
     const filter = { userId: req.user.id };
     if (status) filter.status = status;
 
-    const orders = await Order.find({ userId: req.user.id })
-    .sort({ createdAt: -1 })
-    .populate("items.productId", "name price image")
-    res.status(200).json({
-      success: true,
-      data: orders
-    });
-  } catch (err) { next(err); }
-};
+    const orders = await populateOrders(
+      Order.find(filter).sort({ createdAt: -1 })
+    );
 
-
-
-export const getAllOrders = async (req, res, next) => {
-  try {
-
-    const { status } = req.query;
-    const filter = {};
-    if (status) filter.status = status;
-
-    const orders = await Order.find(filter)
-      .sort({ createdAt: -1 })
-      .populate("items.productId", "name price image");
-
-    res.status(200).json({
-      success: true,
-      count: orders.length,
-      data: orders,
-    });
-
-  } catch (err) { next(err); }
-};
-
-
-// User cancel order if it's still pending
-export const cancelOrder = async (req, res, next) => {
-  try {
-    const order = await Order.findOne({ _id: req.params.orderId, userId: req.user.id });
-    if (!order) {
-      return res.status(404).json({ success: false, message: "Order not found" });
-    }
-
-    if (order.status !== "pending") {
-      return res.status(400).json({
-        success: false,
-        message: "Only pending orders can be cancelled",
-      });
-    }
-
-    // Restore product stock
-    await restoreStock(order.items);
-
-
-    // Update order status to cancelled  
-    order.status = "cancelled";
-    await order.save();
-
-    res.status(200).json({
-      success: true,
-      message: "Order cancelled successfully",
-      data: order
-    });
-
+    res.status(200).json({ success: true, data: orders });
   } catch (err) {
     next(err);
   }
 };
 
-// Admin can update order status
+// ─── Get all orders (admin) ───────────────────────────────────────────────────
+
+export const getAllOrders = async (req, res, next) => {
+  try {
+    const { status } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+
+    const orders = await populateOrders(
+      Order.find(filter).sort({ createdAt: -1 })
+    );
+
+    res.status(200).json({ success: true, count: orders.length, data: orders });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── User cancel order ────────────────────────────────────────────────────────
+
+export const cancelOrder = async (req, res, next) => {
+  try {
+    const order = await Order.findOne({ _id: req.params.orderId, userId: req.user.id });
+    if (!order)
+      return res.status(404).json({ success: false, message: "Order not found" });
+
+    if (order.status !== "pending")
+      return res.status(400).json({
+        success: false,
+        message: "Only pending orders can be cancelled",
+      });
+
+    await restoreStock(order.items);
+    order.status = "cancelled";
+    await order.save();
+
+    res.status(200).json({ success: true, message: "Order cancelled successfully", data: order });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ─── Admin update order status ────────────────────────────────────────────────
+
 export const adminUpdateOrderStatus = async (req, res, next) => {
   try {
-    const { orderId } = req.params;
+    const { orderId }   = req.params;
     const { newStatus } = req.body;
 
     if (!VALID_STATUSES.includes(newStatus))
@@ -238,64 +215,59 @@ export const adminUpdateOrderStatus = async (req, res, next) => {
       });
 
     const order = await Order.findById(orderId);
-    if (!order) {
+    if (!order)
       return res.status(404).json({ success: false, message: "Order not found" });
-    }
+
+    if (order.status === FINALIZED_STATUS)
+      return res.status(400).json({
+        success: false,
+        message: "Delivered orders cannot be changed",
+      });
 
     const previousStatus = order.status;
+    if (newStatus === "cancelled" && STOCK_HELD_STATUSES.includes(previousStatus)) {
+      await restoreStock(order.items);
+    }
+
     order.status = newStatus;
     await order.save();
 
-    // ── Transaction trigger ───
-    const isNewlyDelivered =
-      newStatus === FINALIZED_STATUS && previousStatus !== FINALIZED_STATUS;
-
-    if (isNewlyDelivered) {
+    if (newStatus === FINALIZED_STATUS) {
       createTransaction({
-        orderId: order._id,
-        userId:  order.userId,
-        amount:  order.total,
+        order:  order._id,
+        user:   order.userId,
+        amount: order.total,
       }).catch((err) => {
-        console.error(`[TransactionService] Failed to record transaction for order ${order._id}:`, err.message);
+        console.error(`[TransactionService] Failed for order ${order._id}:`, err.message);
       });
     }
-
-
 
     res.status(200).json({
       success: true,
       message: `Order status updated to ${newStatus}`,
-      data: order
+      data: order,
     });
-
   } catch (err) {
     next(err);
   }
 };
 
-// Admin can delete order if it's delivered or cancelled
+// ─── Admin delete order ───────────────────────────────────────────────────────
+
 export const adminDeleteOrder = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.orderId);
-    
-    if (!order) {
+    if (!order)
       return res.status(404).json({ success: false, message: "Order not found" });
-    }
 
-    if (!['delivered', 'cancelled'].includes(order.status)) {
+    if (!["delivered", "cancelled"].includes(order.status))
       return res.status(400).json({
         success: false,
-        message: "Can only delete delivered or cancelled orders"
+        message: "Can only delete delivered or cancelled orders",
       });
-    }
 
     await order.deleteOne();
-
-    res.status(200).json({
-      success: true,
-      message: "Order deleted permanently"
-    });
-
+    res.status(200).json({ success: true, message: "Order deleted permanently" });
   } catch (err) {
     next(err);
   }

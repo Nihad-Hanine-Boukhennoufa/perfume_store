@@ -1,12 +1,6 @@
 import multer from "multer";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
-import { v2 as cloudinary } from "cloudinary";
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+import cloudinary from "../config/cloudinary.js";
 
 // ─── Storages ─────────────────────────────────────────────────────────────────
 
@@ -63,18 +57,6 @@ const productMulter = multer({
 });
 
 // ─── Product upload middleware ────────────────────────────────────────────────
-//
-// Accepts:
-//   images        — product images (up to 10)
-//   noteImage_0   — image for note at index 0
-//   noteImage_1   — image for note at index 1
-//   … up to noteImage_9
-//
-// upload.fields() puts files in req.files as an object map:
-//   { images: [file, ...], noteImage_0: [file], ... }
-//
-// normalizeFiles (below) flattens it to a plain array so the controller
-// can filter by f.fieldname, consistent with how upload.array() works.
 
 export const uploadProduct = productMulter.fields([
   { name: "images",      maxCount: 10 },

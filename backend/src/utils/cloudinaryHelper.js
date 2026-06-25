@@ -1,22 +1,17 @@
-import { v2 as cloudinary } from 'cloudinary';
+import cloudinary from "../config/cloudinary.js";
 
-/**
- * Deletes an image from Cloudinary
- * @param {string} publicId - The public_id of the image in Cloudinary
- */
 export const deleteCloudinaryImage = async (publicId) => {
-  if (!publicId) return;
-
+  if (!publicId) return false;
   try {
-    // Ensure cloudinary is configured
-    cloudinary.config({
-      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-      api_key: process.env.CLOUDINARY_API_KEY,
-      api_secret: process.env.CLOUDINARY_API_SECRET
-    });
-    
     await cloudinary.uploader.destroy(publicId);
+    return true;
   } catch (err) {
-    console.error("Error deleting Cloudinary image:", err);
+    console.error(`[Cloudinary] Failed to delete image "${publicId}":`, err.message);
+    return false;
   }
+};
+
+export const deleteCloudinaryImages = async (publicIds = []) => {
+  if (!publicIds.length) return;
+  await Promise.allSettled(publicIds.map(deleteCloudinaryImage));
 };

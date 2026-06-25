@@ -38,8 +38,8 @@ router.post("/upload-avatar", verifyToken, uploadAvatar.single("avatar"), (req, 
 });
 
 router.post("/upload-avatar", verifyToken, uploadAvatar.single("avatar"), );
-router.put("/me", verifyToken, uploadAvatar.single("image"), updateMe);
-router.put("/:id", uploadAvatar.single("image"), updateUser);
+router.put("/:id/me", verifyToken, uploadAvatar.single("image"), updateMe);
+router.put("/:id", verifyToken, uploadAvatar.single("image"), updateUser);
 // Admin only
 router.use(verifyToken, verifyAdmin);
 router.get("/", getAllUsers);

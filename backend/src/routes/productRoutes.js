@@ -11,12 +11,14 @@ import { verifyToken, verifyAdmin } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
+const adminUpload = [verifyToken, verifyAdmin, uploadProduct, normalizeFiles];
+
+
 router.get('/', getProducts);
 router.get('/:id', getProduct);
 
-router.post('/',verifyToken, verifyAdmin, uploadProduct, normalizeFiles, createProduct);
-router.put('/:id',verifyToken, verifyAdmin, uploadProduct, normalizeFiles, updateProduct);
-router.patch('/:id', verifyToken, verifyAdmin, uploadProduct, normalizeFiles, updateProduct);
+router.post("/",    adminUpload, createProduct);
+router.patch("/:id", adminUpload, updateProduct);
 router.delete('/:id',verifyToken, verifyAdmin, deleteProduct);
 
 export default router;

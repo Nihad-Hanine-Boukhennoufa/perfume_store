@@ -13,6 +13,7 @@ import {
   deleteUser,
 } from "../controllers/userController.js";
 import { verifyToken, verifyAdmin } from "../middleware/authMiddleware.js";
+import { uploadAvatar } from "../middleware/upload.js";
 
 const router = express.Router();
 
@@ -30,7 +31,7 @@ router.delete("/orders/:orderId", adminDeleteOrder);
 // ── Users ────────────────────────────────────────────────────────────────────
 router.get("/users", getAllUsers);
 router.get("/users/:id", getUserById);
-router.put("/users/:id", updateUser);
+router.put("/users/:id", updateUser, uploadAvatar.single("image"));
 router.patch("/users/:id/role", updateUserRole);
 router.delete("/users/:id", deleteUser);
 

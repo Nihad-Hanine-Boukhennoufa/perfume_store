@@ -1,51 +1,46 @@
 import express from "express";
 import cors from "cors";
-import path from "path";
-import { fileURLToPath } from "url";
-import productRoutes from "./routes/productRoutes.js";
-import authRoutes from "./routes/authRoutes.js";
-import userRoutes from "./routes/userRoutes.js";
-import cartRoutes from "./routes/cartRoutes.js";
-import orderRoutes from "./routes/orderRoutes.js";
-import adminRoutes from "./routes/adminRoutes.js";
+import productRoutes  from "./routes/productRoutes.js";
+import authRoutes     from "./routes/authRoutes.js";
+import userRoutes     from "./routes/userRoutes.js";
+import cartRoutes     from "./routes/cartRoutes.js";
+import orderRoutes    from "./routes/orderRoutes.js";
+import adminRoutes    from "./routes/adminRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
-import reviewRoutes from "./routes/reviewRoutes.js";
-import brandRoutes from "./routes/brandRoutes.js";
+import reviewRoutes   from "./routes/reviewRoutes.js";
+import brandRoutes    from "./routes/brandRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
-// ES Module --dirname equivalent
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const app = express();
+
+// ─── Core middleware ───────────────────────────────────────────────────────────
 app.use(express.json());
-app.use(express.urlencoded({extended: true}));
+app.use(express.urlencoded({ extended: true }));
 
-app.use(cors({
-  origin: "http://localhost:5173", 
-  credentials: true, 
-}));
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    credentials: true,
+  })
+);
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-// Routes
-app.use("/users", userRoutes);
+// ─── Routes ───────────────────────────────────────────────────────────────────
+app.use("/auth",     authRoutes);
+app.use("/users",    userRoutes);
 app.use("/products", productRoutes);
-app.use("/auth", authRoutes);
-app.use("/cart", cartRoutes);
-app.use("/orders", orderRoutes);
-app.use("/admin", adminRoutes);
+app.use("/brands",   brandRoutes);
+app.use("/cart",     cartRoutes);
+app.use("/orders",   orderRoutes);
 app.use("/wishlist", wishlistRoutes);
-app.use("/reviews", reviewRoutes);
-app.use("/brands", brandRoutes);
+app.use("/reviews",  reviewRoutes);
+app.use("/admin",    adminRoutes);
 
-// Error logger
-app.use((err, req, res, next) => {
-  console.error("🔴 ERROR:", err.message);
-  console.error(err.stack);
-  next(err);
+// ─── 404 ──────────────────────────────────────────────────────────────────────
+app.use((_req, res) => {
+  res.status(404).json({ success: false, message: "Route not found" });
 });
 
-// Error handler
+// ─── Global error handler ─────────────────────────────────────────────────────
 app.use(errorHandler);
+
 export default app;

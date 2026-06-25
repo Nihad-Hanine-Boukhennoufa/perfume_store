@@ -4,91 +4,66 @@ import jwt from "jsonwebtoken";
 import Cart from "../models/Cart.js";
 import { deleteCloudinaryImage } from "../utils/cloudinaryHelper.js";
 
-// Register a new user
+// ---- Register a new user ----------------------------------------------------
+
 export const register = async (req, res, next) => {
   try {
 
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
 
     // Validation
-    if (!name || !email || !password) {
-      console.log("Validation failed: Missing required fields");
+     if (!name || !email || !password) {
       if (req.file) await deleteCloudinaryImage(req.file.filename);
-      return res.status(400).json({ 
-        success: false, 
-        message: "Name, email, and password are required" 
+      return res.status(400).json({
+        success: false,
+        message: "Name, email, and password are required",
       });
     }
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      console.log("User already exists:", email);
       if (req.file) await deleteCloudinaryImage(req.file.filename);
-      
-      return res.status(400).json({ 
-        success: false, 
-        message: "Email already exists" 
+      return res.status(409).json({
+        success: false,
+        message: "Email already exists",
       });
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Get Cloudinary image URL and public_id if file was uploaded
-    const imagePath = req.file?.path || null;
-    const imagePublicId = req.file?.filename || null;
-
     // Create new user
-    const newUser = new User({
+     const newUser = await User.create({
       name,
       email,
       password: hashedPassword,
-      role: role || "user",
-      image: imagePath,
-      imagePublicId: imagePublicId,
+      role: "user",
+      image:         req.file?.path     || null,
+      imagePublicId: req.file?.filename || null,
     });
 
-    await newUser.save();
-    console.log("User created successfully:", newUser._id);
-    
-    // Create an empty cart only for users (not admins)
-    if (newUser.role === "user") {
-      const cart = await Cart.create({
-        userId: newUser._id,
-        items: [],
-        total: 0
-      });
-      console.log("Cart created:", cart._id);
-    }
+await Cart.create({ userId: newUser._id, items: [], total: 0 });
 
     return res.status(201).json({
       success: true,
-      data: { 
-        name: newUser.name, 
-        email: newUser.email, 
-        role: newUser.role,
+      data: {
+        name:  newUser.name,
+        email: newUser.email,
+        role:  newUser.role,
         image: newUser.image,
       },
       message: "User registered successfully",
     });
 
   } catch (err) {
-    // If error occurs and file was uploaded, clean up Cloudinary
-    if (req.file) {
-      await deleteCloudinaryImage(req.file.filename);
-    }
-    
-    console.error("Registration error:", err);
-    
-    res.status(500).json({
-      success: false,
-      message: err.message || "Server error",
-    });
+    if (req.file) await deleteCloudinaryImage(req.file.filename);
+    next(err);
   }
 };
 
-// Login user - keep as is
+// ---- Login user ----------------------------------------------------
+
 export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
@@ -96,13 +71,13 @@ export const login = async (req, res, next) => {
     if (!email || !password) {
       return res.status(400).json({ 
         success: false, 
-        message: "Email and password required" 
+        message: "Email and password are required" 
       });
     }
 
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(400).json({ 
+      return res.status(401).json({ 
         success: false, 
         message: "Invalid credentials" 
       });
@@ -110,7 +85,7 @@ export const login = async (req, res, next) => {
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(400).json({ 
+      return res.status(401).json({ 
         success: false, 
         message: "Invalid credentials" 
       });
@@ -136,10 +111,6 @@ export const login = async (req, res, next) => {
     });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({
-      success: false,
-      message: err.message || "Server error",
-    });
+    next(err);
   }
 };

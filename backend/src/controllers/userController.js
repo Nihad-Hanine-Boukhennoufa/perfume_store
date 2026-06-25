@@ -3,8 +3,9 @@ import Cart from "../models/Cart.js";
 import bcrypt from "bcryptjs";
 import { deleteCloudinaryImage } from "../utils/cloudinaryHelper.js";
 
-// Get all users
-export const getAllUsers = async (req, res) => {
+// ----Get all users ----------------------------------------------------
+
+export const getAllUsers = async (req, res, next) => {
   try {
     const { page = 1, limit = 10, search = "", role = "" } = req.query;
 
@@ -25,32 +26,30 @@ export const getAllUsers = async (req, res) => {
     // Filter by role
     if (role && role !== "all") query.role = role;
 
-    const users = await User.find(query)
-      .select("-password")
-      .limit(limitNumber)
-      .skip((pageNumber - 1) * limitNumber)
-      .sort({ createdAt: -1 });
-
-    const count = await User.countDocuments(query);
+    const [users, count] = await Promise.all([
+      User.find(query)
+        .select("-password")
+        .sort({ createdAt: -1 })
+        .skip((pageNumber - 1) * limitNumber)
+        .limit(limitNumber),
+      User.countDocuments(query),
+    ]);
 
     res.status(200).json({
       success: true,
-      data: users,
-      totalPages: Math.ceil(count / limitNumber),
+      data:        users,
+      total:       count,
+      totalPages:  Math.ceil(count / limitNumber),
       currentPage: pageNumber,
-      total: count,
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Get user by ID
-export const getUserById = async (req, res) => {
+// ---- Get user by ID ----------------------------------------------------
+
+export const getUserById = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id).select("-password");
 
@@ -65,17 +64,14 @@ export const getUserById = async (req, res) => {
       success: true,
       data: user,
     });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Update user
-export const updateUser = async (req, res) => {
+// ---- Update user ----------------------------------------------------
+
+export const updateUser = async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
     const userId = req.params.id;
@@ -89,7 +85,6 @@ export const updateUser = async (req, res) => {
       });
     }
 
-    // Prevent empty update
     if (!name && !email && !password && !req.file) {
       return res.status(400).json({
         success: false,
@@ -97,196 +92,130 @@ export const updateUser = async (req, res) => {
       });
     }
 
-    // Check if email is being changed and if it's already taken
     if (email && email !== user.email) {
-      const existingUser = await User.findOne({ email });
-      if (existingUser) {
-        // If new file was uploaded, clean it up since we're rejecting the request
+      const taken = await User.findOne({ email });
+      if (taken) {
         if (req.file) await deleteCloudinaryImage(req.file.filename);
-        
-        return res.status(400).json({
-          success: false,
-          message: "Email already exists",
-        });
+        return res.status(409).json({ success: false, message: "Email already exists" });
       }
-
       user.email = email;
-    
     }
 
-
-    if (name) user.name = name;
-
-    // Image update
+    if (name)     user.name     = name;
+    if (password) user.password = await bcrypt.hash(password, 12);
 
     if (req.file) {
-      // Delete old image if exists
-      if (user.imagePublicId) {
-        await deleteCloudinaryImage(user.imagePublicId);
-      }
-
-      user.image = req.file.path;
+      if (user.imagePublicId) await deleteCloudinaryImage(user.imagePublicId);
+      user.image         = req.file.path;
       user.imagePublicId = req.file.filename;
-
     }
-
-    // Hash new password if provided
-     if (password) user.password = await bcrypt.hash(password, 12);
 
     await user.save();
 
     res.status(200).json({
       success: true,
-      data: {
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        image: user.image,
+      data:    { 
+        name: user.name, 
+        email: user.email, 
+        role: user.role, 
+        image: user.image 
       },
       message: "User updated successfully",
     });
-  } catch (error) {
-    // Clean up uploaded file if error occurs
+  } catch (err) {
     if (req.file) await deleteCloudinaryImage(req.file.filename);
-    
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
+    next(err);
   }
 };
 
-// Update user role
-export const updateUserRole = async (req, res) => {
+// ---- Update user role ----------------------------------------------------
+
+export const updateUserRole = async (req, res, next) => {
   try {
     const { role } = req.body;
-    const userId = req.params.id;
+    const userId   = req.params.id;
 
-    // Prevent admin from changing their own role
     if (userId === req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: "You cannot change your own role",
-      });
+      return res.status(403).json({ success: false, message: "You cannot change your own role" });
     }
 
     if (!["user", "admin"].includes(role)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid role. Must be 'user' or 'admin'",
-      });
+      return res.status(400).json({ success: false, message: "Role must be 'user' or 'admin'" });
     }
 
     const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
     const oldRole = user.role;
     user.role = role;
     await user.save();
 
-    // Create cart if switching from admin → user
     if (oldRole === "admin" && role === "user") {
-      const existingCart = await Cart.findOne({ userId: user._id });
-
-      if (!existingCart) {
-        await Cart.create({
-          userId: user._id,
-          items: [],
-          total: 0,
-        });
-      }
+      const exists = await Cart.findOne({ userId: user._id });
+      if (!exists) await Cart.create({ userId: user._id, items: [], total: 0 });
     }
 
     res.status(200).json({
       success: true,
-      data: {
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        image: user.image,
-      },
+      data:    { name: user.name, email: user.email, role: user.role, image: user.image },
       message: "User role updated successfully",
     });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
+  } catch (err) {
+    next(err);
   }
 };
 
-// Delete user
-export const deleteUser = async (req, res) => {
+// ---- Delete user ----------------------------------------------------
+
+export const deleteUser = async (req, res, next) => {
   try {
     const userId = req.params.id;
 
-    // Prevent admin from deleting themselves
     if (userId === req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: "You cannot delete your own account",
-      });
+      return res.status(403).json({ success: false, message: "You cannot delete your own account" });
     }
-
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    if (user.imagePublicId) {
-      await deleteCloudinaryImage(user.imagePublicId);
-    }
-
-    // Delete associated cart if exists
-    await Cart.deleteOne({ userId: user._id });
-
-    // Delete user
-    await User.findByIdAndDelete(userId);
-
-    res.status(200).json({
-      success: true,
-      message: "User deleted successfully",
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
-  }
-};
-
-// Update current user's own profile
-export const updateMe = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const { name } = req.body;
 
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    if (!name && !req.file) {
+    if (user.imagePublicId) await deleteCloudinaryImage(user.imagePublicId);
+    await Promise.all([
+      Cart.deleteOne({ userId: user._id }),
+      User.findByIdAndDelete(userId),
+    ]);
+
+    res.status(200).json({ success: true, message: "User deleted successfully" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---- Update current user's own profile ----------------------------------------------------
+
+export const updateMe = async (req, res, next) => {
+  try {
+    const { name, email } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    if (!name && !email && !req.file) {
       return res.status(400).json({ success: false, message: "No data provided" });
+    }
+
+    if (email && email !== user.email) {
+      const taken = await User.findOne({ email });
+      if (taken) {
+        if (req.file) await deleteCloudinaryImage(req.file.filename);
+        return res.status(409).json({ success: false, message: "Email already exists" });
+      }
+      user.email = email;
     }
 
     if (name) user.name = name;
 
     if (req.file) {
       if (user.imagePublicId) await deleteCloudinaryImage(user.imagePublicId);
-      user.image = req.file.path;
+      user.image         = req.file.path;
       user.imagePublicId = req.file.filename;
     }
 
@@ -294,11 +223,11 @@ export const updateMe = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: { name: user.name, email: user.email, role: user.role, image: user.image },
+      data:    { name: user.name, email: user.email, role: user.role, image: user.image },
       message: "Profile updated successfully",
     });
   } catch (err) {
     if (req.file) await deleteCloudinaryImage(req.file.filename);
-    res.status(500).json({ success: false, message: err.message || "Server error" });
+    next(err);
   }
 };

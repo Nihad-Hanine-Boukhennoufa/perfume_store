@@ -1,4 +1,5 @@
 import Brand from "../models/Brand.js";
+import Product from "../models/Product.js";
 import { deleteCloudinaryImage } from "../utils/cloudinaryHelper.js";
 
 // =====================
@@ -179,7 +180,7 @@ export const updateBrand = async (req, res, next) => {
 // =====================
 // Delete Brand
 // =====================
-export const deleteBrand = async (req, res) => {
+export const deleteBrand = async (req, res, next) => {
   try {
     const brand = await Brand.findById(req.params.id);
 
@@ -190,18 +191,27 @@ export const deleteBrand = async (req, res) => {
       });
     }
 
-    // Delete image from Cloudinary
+    const used = await Product.exists({
+      brand: brand._id,
+    });
+
+    if (used) {
+      return res.status(409).json({
+        success: false,
+        message: "Cannot delete a brand that is used by products",
+      });
+    }
+
     if (brand.imagePublicId) {
       await deleteCloudinaryImage(brand.imagePublicId);
     }
 
-    await Brand.findByIdAndDelete(req.params.id);
+    await brand.deleteOne();
 
     res.status(200).json({
       success: true,
       message: "Brand deleted successfully",
     });
-
   } catch (err) {
     next(err);
   }

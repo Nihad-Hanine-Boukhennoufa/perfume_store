@@ -4,12 +4,13 @@ import { deleteCloudinaryImage } from "../utils/cloudinaryHelper.js";
 // =====================
 // Create Brand
 // =====================
-export const createBrand = async (req, res) => {
+export const createBrand = async (req, res, next) => {
   try {
     const { name } = req.body;
 
-    if (!name) {
+    if (!name || !name.trim()) {
       if (req.file) await deleteCloudinaryImage(req.file.filename);
+
       return res.status(400).json({
         success: false,
         message: "Brand name is required",
@@ -23,55 +24,66 @@ export const createBrand = async (req, res) => {
       });
     }
 
+    const exists = await Brand.findOne({
+      name: name.trim(),
+    });
+
+    if (exists) {
+      if (req.file) await deleteCloudinaryImage(req.file.filename);
+
+      return res.status(409).json({
+        success: false,
+        message: "Brand already exists",
+      });
+    }
+
     const brand = await Brand.create({
       name,
-      image: req.file.path,          // Cloudinary URL
-      imagePublicId: req.file.filename, // Cloudinary public_id
+      image: req.file.path,
+      imagePublicId: req.file.filename,
     });
 
     res.status(201).json({
       success: true,
-      data: brand,
+      data: {
+        _id: brand._id,
+        name: brand.name,
+        image: brand.image,
+      },
       message: "Brand created successfully",
     });
 
-  } catch (error) {
+  } catch (err) {
     if (req.file) await deleteCloudinaryImage(req.file.filename);
-
-    console.error("Create brand error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
+    next(err);
   }
 };
 
 // =====================
 // Get All Brands
 // =====================
-export const getAllBrands = async (req, res) => {
+export const getAllBrands = async (req, res, next) => {
   try {
-    const brands = await Brand.find().sort({ createdAt: -1 });
+    const brands = await Brand.find()
+      .select("-imagePublicId")
+      .sort({ createdAt: -1 });
 
     res.status(200).json({
       success: true,
       data: brands,
     });
-  } catch (error) {
-    console.error("Get brands error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
+  } catch (err) {
+    next(err);
   }
 };
 
 // =====================
 // Get Brand By ID
 // =====================
-export const getBrandById = async (req, res) => {
+export const getBrandById = async (req, res, next) => {
   try {
-    const brand = await Brand.findById(req.params.id);
+    const brand = await Brand.findById(req.params.id)
+      .select("-imagePublicId");
 
     if (!brand) {
       return res.status(404).json({
@@ -84,38 +96,61 @@ export const getBrandById = async (req, res) => {
       success: true,
       data: brand,
     });
-
-  } catch (error) {
-    console.error("Get brand error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
+  } catch (err) {
+    next(err);
   }
 };
 
 // =====================
 // Update Brand
 // =====================
-export const updateBrand = async (req, res) => {
+export const updateBrand = async (req, res, next) => {
   try {
+    const { name } = req.body;
+
     const brand = await Brand.findById(req.params.id);
 
     if (!brand) {
       if (req.file) await deleteCloudinaryImage(req.file.filename);
+
       return res.status(404).json({
         success: false,
         message: "Brand not found",
       });
     }
 
-    const { name } = req.body;
+    if (!name && !req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No data provided",
+      });
+    }
 
-    if (name) brand.name = name;
+    if (name !== undefined && !name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Brand name cannot be empty",
+      });
+    }
 
-    // If new image uploaded
+    if (name && name.trim() !== brand.name) {
+      const exists = await Brand.findOne({
+        name: name.trim(),
+      });
+
+      if (exists) {
+        if (req.file) await deleteCloudinaryImage(req.file.filename);
+
+        return res.status(409).json({
+          success: false,
+          message: "Brand already exists",
+        });
+      }
+
+      brand.name = name.trim();
+    }
+
     if (req.file) {
-      // Delete old image
       if (brand.imagePublicId) {
         await deleteCloudinaryImage(brand.imagePublicId);
       }
@@ -128,18 +163,16 @@ export const updateBrand = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      data: brand,
+      data: {
+        _id: brand._id,
+        name: brand.name,
+        image: brand.image,
+      },
       message: "Brand updated successfully",
     });
-
-  } catch (error) {
+  } catch (err) {
     if (req.file) await deleteCloudinaryImage(req.file.filename);
-
-    console.error("Update brand error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
+    next(err);
   }
 };
 
@@ -169,11 +202,7 @@ export const deleteBrand = async (req, res) => {
       message: "Brand deleted successfully",
     });
 
-  } catch (error) {
-    console.error("Delete brand error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server error",
-    });
+  } catch (err) {
+    next(err);
   }
 };

@@ -4,44 +4,22 @@ import { uploadAvatar } from "../middleware/upload.js";
 import { 
   getAllUsers, 
   getUserById, 
-  updateUser, 
-  deleteUser, 
-  updateUserRole, 
-  updateMe } from "../controllers/userController.js";
+  getMe,
+  updateUserRole,  
+  updateMe, 
+  changePassword,
+  deleteUser } from "../controllers/userController.js";
 
 const router = express.Router();
 
-// Public route for uploading avatar (authenticated users only)
-router.post("/upload-avatar", verifyToken, uploadAvatar.single("avatar"), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "No file uploaded" 
-      });
-    }
-    
-    res.status(200).json({
-      success: true,
-      data: { 
-          imageUrl: req.file.path,  
-          imagePublicId: req.file.filename  
-      },
-      message: "Image uploaded successfully"
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message || "Error uploading image"
-    });
-  }
-});
+// User routes
+router.get("/me", verifyToken, getMe);
+router.put("/me", verifyToken, uploadAvatar.single("image"), updateMe);
+router.patch("/change-password", verifyToken, changePassword );
 
-// router.post("/upload-avatar", verifyToken, uploadAvatar.single("avatar"), );
-router.put("/:id/me", verifyToken, uploadAvatar.single("image"), updateMe);
-router.put("/:id", verifyToken, uploadAvatar.single("image"), updateUser);
-// Admin only
+// Admin routes
 router.use(verifyToken, verifyAdmin);
+
 router.get("/", getAllUsers);
 router.get("/:id", getUserById);
 router.patch("/:id/role", updateUserRole);

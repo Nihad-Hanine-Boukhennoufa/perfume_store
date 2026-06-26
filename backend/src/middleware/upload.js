@@ -34,8 +34,11 @@ const productStorage = new CloudinaryStorage({
 // ─── Multer instances ─────────────────────────────────────────────────────────
 
 const imageFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith("image/")) cb(null, true);
-  else cb(new Error("Only image files are allowed!"), false);
+  if (!file.mimetype.startsWith("image/")) {
+    return cb(new Error("Only image files are allowed!"), false);
+  }
+
+  cb(null, true);
 };
 
 export const uploadAvatar = multer({

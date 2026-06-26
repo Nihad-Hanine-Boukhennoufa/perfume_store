@@ -37,9 +37,9 @@ export const getAllUsers = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data:        users,
-      total:       count,
-      totalPages:  Math.ceil(count / limitNumber),
+      data: users,
+      total: count,
+      totalPages: Math.ceil(count / limitNumber),
       currentPage: pageNumber,
     });
   } catch (err) {
@@ -69,26 +69,94 @@ export const getUserById = async (req, res, next) => {
   }
 };
 
-// ---- Update user ----------------------------------------------------
+// ---- Get current user's profile ----------------------------------------------------
 
-export const updateUser = async (req, res, next) => {
+export const getMe = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
-    const userId = req.params.id;
+    const user = await User.findById(req.user.id)
+      .select("-password");
 
-    const user = await User.findById(userId);
     if (!user) {
-      if (req.file) await deleteCloudinaryImage(req.file.filename);
       return res.status(404).json({
         success: false,
         message: "User not found",
       });
     }
 
-    if (!name && !email && !password && !req.file) {
+    res.status(200).json({
+      success: true,
+      data: user,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---- Update user role ----------------------------------------------------
+
+export const updateUserRole = async (req, res, next) => {
+  try {
+    const { role } = req.body;
+    const userId = req.params.id;
+
+    if (userId === req.user.id) {
+      return res.status(403).json({ success: false, message: "You cannot change your own role" });
+    }
+
+    if (!["user", "admin"].includes(role)) {
+      return res.status(400).json({ success: false, message: "Role must be 'user' or 'admin'" });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    if (user.role === role) {
       return res.status(400).json({
         success: false,
-        message: "No data provided to update",
+        message: "User already has this role",
+      });
+    }
+    const oldRole = user.role;
+    user.role = role;
+    await user.save();
+
+    if (oldRole === "admin" && role === "user") {
+      const exists = await Cart.findOne({ userId: user._id });
+      if (!exists) await Cart.create({ userId: user._id, items: [], total: 0 });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { name: user.name, email: user.email, role: user.role, image: user.image },
+      message: "User role updated successfully",
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ---- Update current user's own profile ----------------------------------------------------
+
+export const updateMe = async (req, res, next) => {
+  try {
+    const { name, email } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    if (!name && !email && !req.file) {
+      return res.status(400).json({ success: false, message: "No data provided" });
+    }
+
+    if (typeof name === "string" && !name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Name cannot be empty",
       });
     }
 
@@ -101,12 +169,11 @@ export const updateUser = async (req, res, next) => {
       user.email = email;
     }
 
-    if (name)     user.name     = name;
-    if (password) user.password = await bcrypt.hash(password, 12);
+    if (name) user.name = name;
 
     if (req.file) {
       if (user.imagePublicId) await deleteCloudinaryImage(user.imagePublicId);
-      user.image         = req.file.path;
+      user.image = req.file.path;
       user.imagePublicId = req.file.filename;
     }
 
@@ -114,13 +181,8 @@ export const updateUser = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data:    { 
-        name: user.name, 
-        email: user.email, 
-        role: user.role, 
-        image: user.image 
-      },
-      message: "User updated successfully",
+      data: { name: user.name, email: user.email, role: user.role, image: user.image },
+      message: "Profile updated successfully",
     });
   } catch (err) {
     if (req.file) await deleteCloudinaryImage(req.file.filename);
@@ -128,37 +190,66 @@ export const updateUser = async (req, res, next) => {
   }
 };
 
-// ---- Update user role ----------------------------------------------------
+// ---- Change current user's password ----------------------------------------------------
 
-export const updateUserRole = async (req, res, next) => {
+export const changePassword = async (req, res, next) => {
   try {
-    const { role } = req.body;
-    const userId   = req.params.id;
+    const { currentPassword, newPassword } = req.body;
 
-    if (userId === req.user.id) {
-      return res.status(403).json({ success: false, message: "You cannot change your own role" });
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password and new password are required",
+      });
     }
 
-    if (!["user", "admin"].includes(role)) {
-      return res.status(400).json({ success: false, message: "Role must be 'user' or 'admin'" });
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 8 characters",
+      });
     }
 
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    const user = await User.findById(req.user.id).select("+password");
 
-    const oldRole = user.role;
-    user.role = role;
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const isMatch = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+    }
+
+    const samePassword = await bcrypt.compare(
+      newPassword,
+      user.password
+    );
+
+    if (samePassword) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be different from current password",
+      });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 12);
+
     await user.save();
-
-    if (oldRole === "admin" && role === "user") {
-      const exists = await Cart.findOne({ userId: user._id });
-      if (!exists) await Cart.create({ userId: user._id, items: [], total: 0 });
-    }
 
     res.status(200).json({
       success: true,
-      data:    { name: user.name, email: user.email, role: user.role, image: user.image },
-      message: "User role updated successfully",
+      message: "Password changed successfully",
     });
   } catch (err) {
     next(err);
@@ -186,48 +277,6 @@ export const deleteUser = async (req, res, next) => {
 
     res.status(200).json({ success: true, message: "User deleted successfully" });
   } catch (err) {
-    next(err);
-  }
-};
-
-// ---- Update current user's own profile ----------------------------------------------------
-
-export const updateMe = async (req, res, next) => {
-  try {
-    const { name, email } = req.body;
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ success: false, message: "User not found" });
-
-    if (!name && !email && !req.file) {
-      return res.status(400).json({ success: false, message: "No data provided" });
-    }
-
-    if (email && email !== user.email) {
-      const taken = await User.findOne({ email });
-      if (taken) {
-        if (req.file) await deleteCloudinaryImage(req.file.filename);
-        return res.status(409).json({ success: false, message: "Email already exists" });
-      }
-      user.email = email;
-    }
-
-    if (name) user.name = name;
-
-    if (req.file) {
-      if (user.imagePublicId) await deleteCloudinaryImage(user.imagePublicId);
-      user.image         = req.file.path;
-      user.imagePublicId = req.file.filename;
-    }
-
-    await user.save();
-
-    res.status(200).json({
-      success: true,
-      data:    { name: user.name, email: user.email, role: user.role, image: user.image },
-      message: "Profile updated successfully",
-    });
-  } catch (err) {
-    if (req.file) await deleteCloudinaryImage(req.file.filename);
     next(err);
   }
 };

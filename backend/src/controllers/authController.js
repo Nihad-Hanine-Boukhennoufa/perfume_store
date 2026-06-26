@@ -12,11 +12,21 @@ export const register = async (req, res, next) => {
     const { name, email, password } = req.body;
 
     // Validation
-     if (!name || !email || !password) {
+    if (!name || !email || !password) {
       if (req.file) await deleteCloudinaryImage(req.file.filename);
       return res.status(400).json({
         success: false,
         message: "Name, email, and password are required",
+      });
+    }
+
+    // Password validation
+    if (password.length < 8) {
+      if (req.file) await deleteCloudinaryImage(req.file.filename);
+
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 8 characters",
       });
     }
 
@@ -34,23 +44,23 @@ export const register = async (req, res, next) => {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Create new user
-     const newUser = await User.create({
+    const newUser = await User.create({
       name,
       email,
       password: hashedPassword,
       role: "user",
-      image:         req.file?.path     || null,
+      image: req.file?.path || null,
       imagePublicId: req.file?.filename || null,
     });
 
-await Cart.create({ userId: newUser._id, items: [], total: 0 });
+    await Cart.create({ userId: newUser._id, items: [], total: 0 });
 
     return res.status(201).json({
       success: true,
       data: {
-        name:  newUser.name,
+        name: newUser.name,
         email: newUser.email,
-        role:  newUser.role,
+        role: newUser.role,
         image: newUser.image,
       },
       message: "User registered successfully",
@@ -69,25 +79,25 @@ export const login = async (req, res, next) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Email and password are required" 
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required"
       });
     }
 
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "Invalid credentials" 
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials"
       });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "Invalid credentials" 
+      return res.status(401).json({
+        success: false,
+        message: "Invalid credentials"
       });
     }
 
@@ -99,15 +109,16 @@ export const login = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: { 
-        token, 
-        user: { 
-          name: user.name, 
-          email: user.email, 
+      data: {
+        token,
+        user: {
+          name: user.name,
+          email: user.email,
           role: user.role,
-          image: user.image, 
-        } 
+          image: user.image,
+        }
       },
+      message: "Login successful",
     });
 
   } catch (err) {

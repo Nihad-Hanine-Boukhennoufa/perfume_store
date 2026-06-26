@@ -8,7 +8,6 @@ import {
 import {
   getAllUsers,
   getUserById,
-  updateUser,
   updateUserRole,
   deleteUser,
 } from "../controllers/userController.js";
@@ -31,7 +30,6 @@ router.delete("/orders/:orderId", adminDeleteOrder);
 // ── Users ────────────────────────────────────────────────────────────────────
 router.get("/users", getAllUsers);
 router.get("/users/:id", getUserById);
-router.put("/users/:id", updateUser, uploadAvatar.single("image"));
 router.patch("/users/:id/role", updateUserRole);
 router.delete("/users/:id", deleteUser);
 

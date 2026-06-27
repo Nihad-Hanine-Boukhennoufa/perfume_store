@@ -19,26 +19,6 @@ const toArray = (val) => {
     return Array.isArray(val) ? val : [val];
 };
 
-// Parse notes from the bracket-notation fields multer gives us:
-// notes[0][text], notes[0][existingImageUrl], notes[0][existingImageId]
-// multer puts these on req.body as { 'notes[0][text]': '...', ... }
-const parseNoteTexts = (body) => {
-    if (Array.isArray(body.notes)) {
-        return body.notes.map(n => ({ text: n.text }));
-    }
-
-    const notes = [];
-    let i = 0;
-    while (body[`notes[${i}][text]`] !== undefined) {
-        notes.push({
-            text: body[`notes[${i}][text]`],
-            existingImageUrl: body[`notes[${i}][existingImageUrl]`],
-            existingImageId: body[`notes[${i}][existingImageId]`],
-        });
-        i++;
-    }
-    return notes;
-};
 
 // ─── GET all products ─────────────────────────────────────────────────────────
 

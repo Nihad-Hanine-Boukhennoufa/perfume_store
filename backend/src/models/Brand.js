@@ -6,13 +6,13 @@ const brandSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      unique: true,
+      unique: true, // ✅ already creates index — removed brandSchema.index({ name: 1 })
       trim: true,
     },
 
     slug: {
       type: String,
-      unique: true,
+      unique: true, // ✅ already creates index — removed brandSchema.index({ slug: 1 })
       lowercase: true,
       trim: true,
     },
@@ -32,7 +32,6 @@ const brandSchema = new mongoose.Schema(
   }
 );
 
-// Generate unique slug
 brandSchema.pre("validate", async function () {
   if (!this.isModified("name") && !this.isNew) return;
 
@@ -57,8 +56,5 @@ brandSchema.pre("validate", async function () {
 
   this.slug = slug;
 });
-
-brandSchema.index({ name: 1 });
-brandSchema.index({ slug: 1 });
 
 export default mongoose.model("Brand", brandSchema);

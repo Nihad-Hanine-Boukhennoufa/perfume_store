@@ -1,7 +1,8 @@
 import { deleteCloudinaryImage } from "../utils/cloudinaryHelper.js";
 
 /**
- * Transform multer files into Product image objects
+ * Transform multer files into Product image objects.
+ * Also exported as `uploadMultipleImages` to match controller imports.
  */
 export const uploadProductImages = (files = []) => {
   if (!files.length) {
@@ -23,8 +24,13 @@ export const uploadProductImages = (files = []) => {
   };
 };
 
+// ✅ FIX: controller imports uploadMultipleImages — alias export to match
+export const uploadMultipleImages = (files = []) => {
+  return uploadProductImages(files).images;
+};
+
 /**
- * Delete multiple Cloudinary images
+ * Delete multiple Cloudinary images (fire-and-forget safe via allSettled)
  */
 export const deleteImagesByPublicIds = async (publicIds = []) => {
   if (!publicIds.length) return;
@@ -35,7 +41,7 @@ export const deleteImagesByPublicIds = async (publicIds = []) => {
 };
 
 /**
- * Ensure exactly one primary image exists
+ * Ensure exactly one primary image exists in the array
  */
 export const ensurePrimaryImage = (images = []) => {
   if (!images.length) return;
@@ -56,29 +62,23 @@ export const ensurePrimaryImage = (images = []) => {
 };
 
 /**
- * Append new images to product
+ * Append new images to product and ensure one primary
  */
 export const appendProductImages = (product, files = []) => {
   const { images, uploadedIds } = uploadProductImages(files);
 
-  if (!images.length) {
-    return [];
-  }
+  if (!images.length) return [];
 
   product.images.push(...images);
-
   ensurePrimaryImage(product.images);
 
   return uploadedIds;
 };
 
 /**
- * Remove selected images
+ * Remove selected images from Cloudinary and from product
  */
-export const removeProductImages = async (
-  product,
-  publicIds = []
-) => {
+export const removeProductImages = async (product, publicIds = []) => {
   if (!publicIds.length) return;
 
   await deleteImagesByPublicIds(publicIds);
@@ -91,12 +91,9 @@ export const removeProductImages = async (
 };
 
 /**
- * Replace all product images
+ * Replace all product images with new uploads
  */
-export const replaceProductImages = async (
-  product,
-  files = []
-) => {
+export const replaceProductImages = async (product, files = []) => {
   await deleteImagesByPublicIds(
     product.images.map((image) => image.publicId)
   );
@@ -104,7 +101,6 @@ export const replaceProductImages = async (
   const { images, uploadedIds } = uploadProductImages(files);
 
   product.images = images;
-
   ensurePrimaryImage(product.images);
 
   return uploadedIds;

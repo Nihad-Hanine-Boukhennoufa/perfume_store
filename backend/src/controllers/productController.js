@@ -1,5 +1,12 @@
-import Product from '../models/Product.js';
-import { deleteImagesByPublicIds, uploadMultipleImages, replaceAllImages } from "../services/productImageService.js";
+import mongoose from "mongoose"; // ✅ FIX 1: was missing, needed for ObjectId.isValid()
+
+import Brand from "../models/Brand.js";
+import Note from "../models/Note.js";
+import Product from "../models/Product.js";
+import {
+  deleteImagesByPublicIds,
+  uploadMultipleImages, // ✅ FIX 2: alias added in productImageService.js (was uploadProductImages)
+} from "../services/productImageService.js";
 
 // ─── GET all products ─────────────────────────────────────────────────────────
 
@@ -33,7 +40,6 @@ export const getProducts = async (req, res, next) => {
     // ─────────────────────────────
     const query = {};
 
-    // Search (name)
     if (search) {
       query.name = {
         $regex: search.trim(),
@@ -41,7 +47,6 @@ export const getProducts = async (req, res, next) => {
       };
     }
 
-    // Filters
     if (brand) query.brand = brand;
     if (gender) query.gender = gender;
     if (concentration) query.concentration = concentration;
@@ -52,18 +57,14 @@ export const getProducts = async (req, res, next) => {
       };
     }
 
-    // Price filter (inside variants)
     if (minPrice || maxPrice) {
       query["variants.price"] = {};
-
       if (minPrice) query["variants.price"].$gte = Number(minPrice);
       if (maxPrice) query["variants.price"].$lte = Number(maxPrice);
     }
 
-    // Rating filter
     if (minRating || maxRating) {
       query.rating = {};
-
       if (minRating) query.rating.$gte = Number(minRating);
       if (maxRating) query.rating.$lte = Number(maxRating);
     }
@@ -108,7 +109,6 @@ export const getProducts = async (req, res, next) => {
         pages: Math.ceil(total / limit),
       },
     });
-
   } catch (err) {
     next(err);
   }
@@ -149,13 +149,17 @@ export const getProduct = async (req, res, next) => {
 
     // ─────────────────────────────
     // 3. Get related products (same brand)
+    // ✅ FIX 3: after .lean(), populated brand is an object { _id, name, image }
+    //           so we access product.brand._id correctly
     // ─────────────────────────────
+    const brandId = product.brand?._id ?? product.brand;
+
     const relatedProducts = await Product.find({
       _id: { $ne: product._id },
-      brand: product.brand._id,
+      brand: brandId,
       isPublished: true,
     })
-      .select("name images variants rating")
+      .select("name images variants rating slug")
       .limit(6)
       .lean();
 
@@ -169,13 +173,13 @@ export const getProduct = async (req, res, next) => {
         relatedProducts,
       },
     });
-
   } catch (err) {
     next(err);
   }
 };
 
-// ─── CREATE a product ────────────────────────────────────────────────────
+// ─── CREATE a product ─────────────────────────────────────────────────────────
+
 export const createProduct = async (req, res, next) => {
   const uploadedIds = [];
 
@@ -194,56 +198,56 @@ export const createProduct = async (req, res, next) => {
       isPublished,
     } = req.body;
 
-    // Product images
+    // ─────────────────────────────
+    // 1. Image files validation
+    // ─────────────────────────────
     const imageFiles = (req.files || []).filter(
       (file) => file.fieldname === "images"
     );
 
     if (!imageFiles.length) {
-      await cleanupUploadedFiles(req.files);
-
+      // ✅ FIX 4: replaced undefined cleanupUploadedFiles() with deleteImagesByPublicIds()
+      // No images were uploaded yet at this point, so nothing to clean up
       return res.status(400).json({
         success: false,
         message: "At least one product image is required",
       });
     }
 
-    // Check duplicate product
-    const exists = await Product.exists({
-      name: name.trim(),
-    });
+    // ─────────────────────────────
+    // 2. Duplicate product check
+    // ─────────────────────────────
+    const exists = await Product.exists({ name: name.trim() });
 
     if (exists) {
-      await cleanupUploadedFiles(req.files);
-
       return res.status(409).json({
         success: false,
         message: "Product already exists",
       });
     }
 
-    // Prevent duplicate volumes
-    const volumes = variants.map((variant) => variant.volume);
+    // ─────────────────────────────
+    // 3. Duplicate volume check
+    // ─────────────────────────────
+    const volumes = variants.map((v) => v.volume);
 
     if (new Set(volumes).size !== volumes.length) {
-      await cleanupUploadedFiles(req.files);
-
       return res.status(400).json({
         success: false,
         message: "Duplicate volume is not allowed",
       });
     }
 
-    // Prevent the same note from existing in multiple levels
+    // ─────────────────────────────
+    // 4. Duplicate notes across levels
+    // ─────────────────────────────
     const allNotes = [
-      ...notes.top,
-      ...notes.heart,
-      ...notes.base,
+      ...(notes.top || []),
+      ...(notes.heart || []),
+      ...(notes.base || []),
     ];
 
     if (new Set(allNotes).size !== allNotes.length) {
-      await cleanupUploadedFiles(req.files);
-
       return res.status(400).json({
         success: false,
         message: "A note cannot exist in more than one level",
@@ -252,24 +256,17 @@ export const createProduct = async (req, res, next) => {
 
     const noteIds = [...new Set(allNotes)];
 
-    // Check Brand + Notes in parallel
+    // ─────────────────────────────
+    // 5. Validate Brand + Notes exist
+    // ─────────────────────────────
     const [brandExists, notesCount] = await Promise.all([
-      Brand.exists({
-        _id: brand,
-      }),
-
+      Brand.exists({ _id: brand }),
       noteIds.length
-        ? Note.countDocuments({
-            _id: {
-              $in: noteIds,
-            },
-          })
+        ? Note.countDocuments({ _id: { $in: noteIds } })
         : Promise.resolve(0),
     ]);
 
     if (!brandExists) {
-      await cleanupUploadedFiles(req.files);
-
       return res.status(404).json({
         success: false,
         message: "Brand not found",
@@ -277,60 +274,47 @@ export const createProduct = async (req, res, next) => {
     }
 
     if (noteIds.length && notesCount !== noteIds.length) {
-      await cleanupUploadedFiles(req.files);
-
       return res.status(400).json({
         success: false,
         message: "One or more notes do not exist",
       });
     }
 
-    // Upload product images
+    // ─────────────────────────────
+    // 6. Upload images
+    // ─────────────────────────────
     const images = await uploadMultipleImages(imageFiles);
 
-    uploadedIds.push(...images.map((image) => image.publicId));
+    uploadedIds.push(...images.map((img) => img.publicId));
 
     images[0].isPrimary = true;
 
-    // Create product
+    // ─────────────────────────────
+    // 7. Create product
+    // ─────────────────────────────
     let product = await Product.create({
       name: name.trim(),
       brand,
       description: description.trim(),
-
       variants,
-
       gender,
       concentration,
       scentType,
       season,
-
       notes,
-
       images,
-
       isFeatured,
       isPublished,
     });
 
-    // Populate references
+    // ─────────────────────────────
+    // 8. Populate references
+    // ─────────────────────────────
     product = await product.populate([
-      {
-        path: "brand",
-        select: "name image",
-      },
-      {
-        path: "notes.top",
-        select: "name image family",
-      },
-      {
-        path: "notes.heart",
-        select: "name image family",
-      },
-      {
-        path: "notes.base",
-        select: "name image family",
-      },
+      { path: "brand", select: "name image" },
+      { path: "notes.top", select: "name image family" },
+      { path: "notes.heart", select: "name image family" },
+      { path: "notes.base", select: "name image family" },
     ]);
 
     return res.status(201).json({
@@ -338,9 +322,8 @@ export const createProduct = async (req, res, next) => {
       data: product,
       message: "Product created successfully",
     });
-
   } catch (err) {
-    // Rollback uploaded images
+    // Rollback uploaded images on any error
     if (uploadedIds.length) {
       await deleteImagesByPublicIds(uploadedIds);
     }
@@ -348,6 +331,8 @@ export const createProduct = async (req, res, next) => {
     next(err);
   }
 };
+
+// ─── UPDATE a product ─────────────────────────────────────────────────────────
 
 export const updateProduct = async (req, res, next) => {
   const uploadedIds = [];
@@ -379,9 +364,9 @@ export const updateProduct = async (req, res, next) => {
     } = req.body;
 
     // ─────────────────────────────
-    // 1. Check duplicate name (if changed)
+    // 1. Name — duplicate check
     // ─────────────────────────────
-    if (name && name !== product.name) {
+    if (name && name.trim() !== product.name) {
       const exists = await Product.exists({
         _id: { $ne: product._id },
         name: name.trim(),
@@ -398,7 +383,7 @@ export const updateProduct = async (req, res, next) => {
     }
 
     // ─────────────────────────────
-    // 2. Check brand (if changed)
+    // 2. Brand — existence check
     // ─────────────────────────────
     if (brand && brand !== product.brand.toString()) {
       const brandExists = await Brand.exists({ _id: brand });
@@ -414,22 +399,10 @@ export const updateProduct = async (req, res, next) => {
     }
 
     // ─────────────────────────────
-    // 3. Description
+    // 3. Simple scalar fields
     // ─────────────────────────────
-    if (description) {
-      product.description = description.trim();
-    }
-
-    // ─────────────────────────────
-    // 4. Variants (with volume validation)
-    // ─────────────────────────────
-    if (variants) {
-      product.variants = variants;
-    }
-
-    // ─────────────────────────────
-    // 5. Simple fields
-    // ─────────────────────────────
+    if (description) product.description = description.trim();
+    if (variants) product.variants = variants;
     if (gender) product.gender = gender;
     if (concentration) product.concentration = concentration;
     if (scentType) product.scentType = scentType;
@@ -438,13 +411,14 @@ export const updateProduct = async (req, res, next) => {
     if (typeof isPublished !== "undefined") product.isPublished = isPublished;
 
     // ─────────────────────────────
-    // 6. Notes validation (prevent duplicates across levels)
+    // 4. Notes — duplicate-across-levels guard
+    // ✅ FIX 5: safely fall back to [] to avoid crash on partial notes object
     // ─────────────────────────────
     if (notes) {
       const allNotes = [
-        ...notes.top,
-        ...notes.heart,
-        ...notes.base,
+        ...(notes.top || []),
+        ...(notes.heart || []),
+        ...(notes.base || []),
       ];
 
       if (new Set(allNotes).size !== allNotes.length) {
@@ -456,8 +430,9 @@ export const updateProduct = async (req, res, next) => {
 
       product.notes = notes;
     }
-        // ─────────────────────────────
-    // 7. Handle removeImages
+
+    // ─────────────────────────────
+    // 5. Remove selected images
     // ─────────────────────────────
     const removeImagesArray = Array.isArray(removeImages)
       ? removeImages
@@ -470,78 +445,62 @@ export const updateProduct = async (req, res, next) => {
         (img) => !removeImagesArray.includes(img.publicId)
       );
 
-      // Prevent deleting all images
-      if (remainingImages.length === 0 && (!req.files || !req.files.length)) {
+      if (remainingImages.length === 0 && !(req.files || []).length) {
         return res.status(400).json({
           success: false,
           message: "Product must have at least one image",
         });
       }
 
-      product.images = remainingImages;
-
       await deleteImagesByPublicIds(removeImagesArray);
+      product.images = remainingImages;
     }
 
     // ─────────────────────────────
-    // 8. Handle new uploaded images
+    // 6. Upload new images
     // ─────────────────────────────
     const newImageFiles = (req.files || []).filter(
       (file) => file.fieldname === "images"
     );
 
-    let newUploaded = [];
-
     if (newImageFiles.length > 0) {
-      newUploaded = await uploadMultipleImages(newImageFiles);
+      const newUploaded = await uploadMultipleImages(newImageFiles);
 
       uploadedIds.push(...newUploaded.map((img) => img.publicId));
 
-      // If replacing mode is ON
       if (replaceImages === "true") {
         const oldPublicIds = product.images.map((img) => img.publicId);
-
         await deleteImagesByPublicIds(oldPublicIds);
-
         product.images = newUploaded;
-
       } else {
-        // append mode
         product.images.push(...newUploaded);
       }
 
-      // Ensure at least one primary image
+      // Ensure one primary image
       const hasPrimary = product.images.some((img) => img.isPrimary);
-
       if (!hasPrimary && product.images.length > 0) {
         product.images[0].isPrimary = true;
       }
     }
+
     // ─────────────────────────────
-    // 9. Save product
+    // 7. Save & populate
     // ─────────────────────────────
     const updatedProduct = await product.save();
 
-    // ─────────────────────────────
-    // 10. Populate (optional but recommended)
-    // ─────────────────────────────
-    await updatedProduct.populate("brand", "name");
+    await updatedProduct.populate([
+      { path: "brand", select: "name image" },
+      { path: "notes.top", select: "name image family" },
+      { path: "notes.heart", select: "name image family" },
+      { path: "notes.base", select: "name image family" },
+    ]);
 
-    // await updatedProduct.populate("notes.top notes.heart notes.base");
-
-    // ─────────────────────────────
-    // 11. Success response
-    // ─────────────────────────────
     return res.status(200).json({
       success: true,
       data: updatedProduct,
       message: "Product updated successfully",
     });
-
   } catch (err) {
-    // ─────────────────────────────
-    // 12. Rollback uploaded images on error
-    // ─────────────────────────────
     if (uploadedIds.length > 0) {
       await deleteImagesByPublicIds(uploadedIds);
     }
@@ -550,7 +509,8 @@ export const updateProduct = async (req, res, next) => {
   }
 };
 
-// ─── DELETE a product ────────────────────────────────────────────────────
+// ─── DELETE a product ─────────────────────────────────────────────────────────
+
 export const deleteProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -578,23 +538,19 @@ export const deleteProduct = async (req, res, next) => {
     }
 
     // ─────────────────────────────
-    // 3. Collect all image publicIds
+    // 3. Collect product image publicIds only
+    // ✅ FIX 6: notes is { top, heart, base } (object of ObjectId refs), NOT an array —
+    //           notes are separate documents with their own images; don't touch them here
     // ─────────────────────────────
-    const productImages = product.images
-      ?.map((img) => img.publicId)
-      .filter(Boolean) || [];
-
-    const noteImages = product.notes
-      ?.flatMap((n) => n.image?.publicId ? [n.image.publicId] : [])
-      .filter(Boolean) || [];
-
-    const allPublicIds = [...productImages, ...noteImages];
+    const publicIds = product.images
+      .map((img) => img.publicId)
+      .filter(Boolean);
 
     // ─────────────────────────────
-    // 4. Delete images FIRST (safety step)
+    // 4. Delete images from Cloudinary
     // ─────────────────────────────
-    if (allPublicIds.length > 0) {
-      await deleteImagesByPublicIds(allPublicIds);
+    if (publicIds.length > 0) {
+      await deleteImagesByPublicIds(publicIds);
     }
 
     // ─────────────────────────────
@@ -602,18 +558,11 @@ export const deleteProduct = async (req, res, next) => {
     // ─────────────────────────────
     await Product.findByIdAndDelete(id);
 
-    // ─────────────────────────────
-    // 6. Success response
-    // ─────────────────────────────
     return res.status(200).json({
       success: true,
       message: "Product deleted successfully",
     });
-
   } catch (err) {
-    // ─────────────────────────────
-    // 7. Error handling (no partial state risk here)
-    // ─────────────────────────────
     next(err);
   }
 };

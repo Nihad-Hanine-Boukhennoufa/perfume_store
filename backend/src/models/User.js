@@ -11,7 +11,7 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
-      unique: true, // ✅ already creates index — removed userSchema.index({ email: 1 })
+      unique: true,
       trim: true,
       lowercase: true,
     },

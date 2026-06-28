@@ -9,25 +9,21 @@ import {
 } from "../controllers/productController.js";
 
 import { uploadProduct } from "../middleware/upload.js";
-import { parseProductBody } from "../middleware/parseProductBody.js";
+import { parseProductBody } from "../middleware/parseProductBody.js"; // ✅ single unified middleware
 import { validate } from "../middleware/validate.js";
 import {
   createProductSchema,
   updateProductSchema,
 } from "../validators/productValidator.js";
-
-import {
-  verifyToken,
-  verifyAdmin,
-} from "../middleware/authMiddleware.js";
+import { verifyToken, verifyAdmin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// Public
+// ── Public ────────────────────────────────────────────────────
 router.get("/", getProducts);
 router.get("/:id", getProduct);
 
-// Admin
+// ── Admin ─────────────────────────────────────────────────────
 router.post(
   "/",
   verifyToken,
@@ -48,11 +44,6 @@ router.patch(
   updateProduct
 );
 
-router.delete(
-  "/:id",
-  verifyToken,
-  verifyAdmin,
-  deleteProduct
-);
+router.delete("/:id", verifyToken, verifyAdmin, deleteProduct);
 
 export default router;

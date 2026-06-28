@@ -6,13 +6,13 @@ const brandSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
-      unique: true, // ✅ already creates index — removed brandSchema.index({ name: 1 })
+      unique: true, 
       trim: true,
     },
 
     slug: {
       type: String,
-      unique: true, // ✅ already creates index — removed brandSchema.index({ slug: 1 })
+      unique: true, 
       lowercase: true,
       trim: true,
     },

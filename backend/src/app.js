@@ -9,6 +9,7 @@ import adminRoutes    from "./routes/adminRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import reviewRoutes   from "./routes/reviewRoutes.js";
 import brandRoutes    from "./routes/brandRoutes.js";
+import noteRoutes from "./routes/noteRoutes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
 const app = express();
@@ -29,6 +30,7 @@ app.use("/auth",     authRoutes);
 app.use("/users",    userRoutes);
 app.use("/products", productRoutes);
 app.use("/brands",   brandRoutes);
+app.use("/notes", noteRoutes);
 app.use("/cart",     cartRoutes);
 app.use("/orders",   orderRoutes);
 app.use("/wishlist", wishlistRoutes);

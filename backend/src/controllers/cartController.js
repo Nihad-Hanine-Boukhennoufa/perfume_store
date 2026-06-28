@@ -3,64 +3,98 @@ import Product from "../models/Product.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// Fix: images (plural, Cloudinary array) + nested brand populate + stock field.
-// brand is an ObjectId ref so we must populate it separately to get the name.
-const PRODUCT_SELECT  = "name price images stock concentration gender";
-const BRAND_POPULATE  = { path: "brand", select: "name" };
+// ✅ FIX 1: removed "price" and "stock" from select — they don't exist at the root
+//           level on Product. Stock and price live inside variants[].
+const PRODUCT_SELECT = "name variants images concentration gender";
+const BRAND_POPULATE = { path: "brand", select: "name" };
 
 const populateCart = (cart) =>
   cart.populate({
-    path:     "items.productId",
-    select:   PRODUCT_SELECT,
+    path: "items.productId",
+    select: PRODUCT_SELECT,
     populate: BRAND_POPULATE,
   });
+
+// ✅ FIX 2: helper to find the right variant by volume and validate stock
+const getVariant = (product, volume) => {
+  const variant = product.variants.find((v) => v.volume === Number(volume));
+  return variant || null;
+};
 
 // ─── Add item to cart ─────────────────────────────────────────────────────────
 
 export const addToCart = async (req, res, next) => {
   try {
-    const { productId, quantity } = req.body;
+    // ✅ FIX 3: require volume so we know which variant to use
+    const { productId, quantity, volume } = req.body;
     const userId = req.user.id;
 
-    if (!productId || quantity < 1)
-      return res.status(400).json({ success: false, message: "Invalid product or quantity" });
+    if (!productId || !volume || quantity < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "productId, volume, and a valid quantity are required",
+      });
+    }
 
     const product = await Product.findById(productId);
-    if (!product)
+    if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
+    }
 
-    // Fix: reject out-of-stock products upfront
-    if (product.stock === 0)
-      return res.status(400).json({ success: false, message: `${product.name} is out of stock` });
+    // ✅ FIX 4: look up the variant by volume
+    const variant = getVariant(product, volume);
+    if (!variant) {
+      return res.status(400).json({
+        success: false,
+        message: `Volume ${volume}ml is not available for this product`,
+      });
+    }
+
+    if (!variant.isAvailable || variant.stock === 0) {
+      return res.status(400).json({
+        success: false,
+        message: `${product.name} (${volume}ml) is out of stock`,
+      });
+    }
 
     let cart = await Cart.findOne({ userId });
     if (!cart) cart = new Cart({ userId, items: [] });
 
+    // Match by both productId AND volume so different sizes are separate cart lines
     const itemIndex = cart.items.findIndex(
-      (item) => item.productId.toString() === productId
+      (item) =>
+        item.productId.toString() === productId &&
+        item.volume === Number(volume)
     );
 
     if (itemIndex > -1) {
       const newQuantity = cart.items[itemIndex].quantity + quantity;
 
-      // Fix: validate combined quantity against available stock
-      if (newQuantity > product.stock)
+      if (newQuantity > variant.stock) {
         return res.status(400).json({
           success: false,
-          message: `Only ${product.stock} unit(s) of "${product.name}" available`,
+          message: `Only ${variant.stock} unit(s) of "${product.name}" (${volume}ml) available`,
         });
+      }
 
       cart.items[itemIndex].quantity = newQuantity;
-      cart.items[itemIndex].price    = product.price;
+      // Keep price in sync in case it changed since item was added
+      cart.items[itemIndex].price = variant.price;
     } else {
-      // Fix: validate initial quantity against available stock
-      if (quantity > product.stock)
+      if (quantity > variant.stock) {
         return res.status(400).json({
           success: false,
-          message: `Only ${product.stock} unit(s) of "${product.name}" available`,
+          message: `Only ${variant.stock} unit(s) of "${product.name}" (${volume}ml) available`,
         });
+      }
 
-      cart.items.push({ productId, quantity, price: product.price });
+      // ✅ FIX 5: store volume alongside productId so the cart line is unambiguous
+      cart.items.push({
+        productId,
+        volume: Number(volume),
+        quantity,
+        price: variant.price,
+      });
     }
 
     await cart.save();
@@ -76,35 +110,67 @@ export const addToCart = async (req, res, next) => {
 
 export const updateCartItem = async (req, res, next) => {
   try {
-    const userId             = req.user.id;
-    const { productId }      = req.params;
-    const { quantity }       = req.body;
+    const userId = req.user.id;
+    const { productId } = req.params;
+    const { quantity, volume } = req.body;
 
-    if (quantity < 1)
-      return res.status(400).json({ success: false, message: "Quantity must be at least 1" });
-
-    const cart = await Cart.findOne({ userId });
-    if (!cart)
-      return res.status(404).json({ success: false, message: "Cart not found" });
-
-    const itemIndex = cart.items.findIndex(
-      (item) => item.productId.toString() === productId
-    );
-    if (itemIndex === -1)
-      return res.status(404).json({ success: false, message: "Product not in cart" });
-
-    // Fix: validate new quantity against live stock
-    const product = await Product.findById(productId).select("stock name");
-    if (!product)
-      return res.status(404).json({ success: false, message: "Product not found" });
-
-    if (quantity > product.stock)
+    if (quantity < 1) {
       return res.status(400).json({
         success: false,
-        message: `Only ${product.stock} unit(s) of "${product.name}" available`,
+        message: "Quantity must be at least 1",
       });
+    }
+
+    if (!volume) {
+      return res.status(400).json({
+        success: false,
+        message: "volume is required to identify the cart item",
+      });
+    }
+
+    const cart = await Cart.findOne({ userId });
+    if (!cart) {
+      return res.status(404).json({ success: false, message: "Cart not found" });
+    }
+
+    // ✅ FIX 6: match on both productId and volume
+    const itemIndex = cart.items.findIndex(
+      (item) =>
+        item.productId.toString() === productId &&
+        item.volume === Number(volume)
+    );
+
+    if (itemIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not in cart",
+      });
+    }
+
+    // ✅ FIX 7: validate against variant stock, not product.stock
+    const product = await Product.findById(productId).select("variants name");
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    const variant = getVariant(product, volume);
+    if (!variant) {
+      return res.status(400).json({
+        success: false,
+        message: `Volume ${volume}ml is not available for this product`,
+      });
+    }
+
+    if (quantity > variant.stock) {
+      return res.status(400).json({
+        success: false,
+        message: `Only ${variant.stock} unit(s) of "${product.name}" (${volume}ml) available`,
+      });
+    }
 
     cart.items[itemIndex].quantity = quantity;
+    cart.items[itemIndex].price = variant.price;
+
     await cart.save();
 
     const populatedCart = await populateCart(cart);
@@ -120,8 +186,6 @@ export const getCart = async (req, res, next) => {
   try {
     let cart = await Cart.findOne({ userId: req.user.id });
 
-    // Fix: empty cart is a valid state — return an empty cart object instead
-    // of 404, which causes the frontend query to throw unnecessarily.
     if (!cart) {
       return res.status(200).json({
         success: true,
@@ -141,19 +205,30 @@ export const getCart = async (req, res, next) => {
 export const removeFromCart = async (req, res, next) => {
   try {
     const { productId } = req.params;
-    const userId        = req.user.id;
+    // ✅ FIX 8: volume comes from query string since DELETE has no body by convention
+    const { volume } = req.query;
+    const userId = req.user.id;
 
     const cart = await Cart.findOne({ userId });
-    if (!cart)
+    if (!cart) {
       return res.status(404).json({ success: false, message: "Cart not found" });
+    }
 
     const originalLength = cart.items.length;
-    cart.items = cart.items.filter(
-      (item) => item.productId.toString() !== productId
-    );
 
-    if (cart.items.length === originalLength)
-      return res.status(400).json({ success: false, message: "Product not found in cart" });
+    cart.items = cart.items.filter((item) => {
+      const sameProduct = item.productId.toString() === productId;
+      // If volume is provided, remove only that variant; otherwise remove all variants
+      const sameVolume = volume ? item.volume === Number(volume) : true;
+      return !(sameProduct && sameVolume);
+    });
+
+    if (cart.items.length === originalLength) {
+      return res.status(400).json({
+        success: false,
+        message: "Product not found in cart",
+      });
+    }
 
     await cart.save();
     const populatedCart = await populateCart(cart);
@@ -171,13 +246,18 @@ export const clearCart = async (req, res, next) => {
     const userId = req.user.id;
 
     const cart = await Cart.findOne({ userId });
-    if (!cart)
+    if (!cart) {
       return res.status(404).json({ success: false, message: "Cart not found" });
+    }
 
     cart.items = [];
     await cart.save();
 
-    res.status(200).json({ success: true, message: "Cart has been cleared", data: cart });
+    res.status(200).json({
+      success: true,
+      message: "Cart has been cleared",
+      data: cart,
+    });
   } catch (err) {
     next(err);
   }

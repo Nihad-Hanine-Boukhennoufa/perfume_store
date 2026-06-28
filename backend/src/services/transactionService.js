@@ -3,23 +3,26 @@ import Transaction from "../models/Transaction.js";
 // ---------------------------------------------------------------------------
 // createTransaction
 //
-// Creates a financial Transaction record for a finalized order.
-// Fully idempotent — safe to call multiple times for the same order.
+// Called from orderController as:
+//   createTransaction({ order: order._id, user: order.userId, amount: order.total })
 //
-// Uses findOneAndUpdate + upsert + $setOnInsert:
-//   - If no transaction exists for this order → inserts a new one
-//   - If one already exists              → does nothing ($setOnInsert is skipped)
-//   - If two concurrent calls race       → one wins, the other hits E11000
-//     which is silently caught below
+// ✅ FIX: original destructured { orderId, userId, amount } but the caller passes
+//         { order, user, amount } — orderId and userId were always undefined,
+//         saving Transaction records with null refs. Aligned param names to match.
+//
+// Fully idempotent via upsert + $setOnInsert:
+//   - First call  → inserts a new Transaction
+//   - Repeat call → no-op ($setOnInsert is skipped on update)
+//   - Race/concurrent calls → one wins, the other hits E11000 (caught below)
 // ---------------------------------------------------------------------------
-export const createTransaction = async ({ orderId, userId, amount }) => {
+export const createTransaction = async ({ order, user, amount }) => {
   try {
     const transaction = await Transaction.findOneAndUpdate(
-      { order: orderId },       // Lookup key — unique index guarantees at most one
+      { order },                  // Lookup by order — unique index ensures at most one
       {
-        $setOnInsert: {         // Only written on INSERT, never on UPDATE
-          order: orderId,
-          user: userId,
+        $setOnInsert: {           // Only written on INSERT, never on UPDATE
+          order,
+          user,
           amount,
         },
       },
@@ -27,14 +30,13 @@ export const createTransaction = async ({ orderId, userId, amount }) => {
         upsert: true,
         new: true,
         runValidators: true,
-        writeConcern: { w: "majority" }, // Durable write on replica sets
+        writeConcern: { w: "majority" },
       }
     );
 
     return transaction;
   } catch (err) {
-
-    // E11000 = duplicate key — a transaction already exists for this order.
+    // E11000 = duplicate key — a transaction already exists for this order
     if (err.code === 11000) return null;
 
     // Any other error is unexpected — re-throw for the caller to handle
@@ -69,9 +71,7 @@ export const getRevenueByMonth = async (months = 12) => {
   since.setMonth(since.getMonth() - months);
 
   const result = await Transaction.aggregate([
-    {
-      $match: { createdAt: { $gte: since } },
-    },
+    { $match: { createdAt: { $gte: since } } },
     {
       $group: {
         _id: {
@@ -85,7 +85,7 @@ export const getRevenueByMonth = async (months = 12) => {
     { $sort: { "_id.year": 1, "_id.month": 1 } },
     {
       $project: {
-        _id: 0,
+        _id:     0,
         year:    "$_id.year",
         month:   "$_id.month",
         revenue: 1,

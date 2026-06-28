@@ -12,11 +12,10 @@ import {
   deleteUser,
 } from "../controllers/userController.js";
 import { verifyToken, verifyAdmin } from "../middleware/authMiddleware.js";
-import { uploadAvatar } from "../middleware/upload.js";
+// ✅ FIX: removed unused `uploadAvatar` import — nothing in this router uploads files
 
 const router = express.Router();
 
-// All routes in this file are protected and restricted to admins
 router.use(verifyToken, verifyAdmin);
 
 // ── Dashboard ────────────────────────────────────────────────────────────────
@@ -27,7 +26,7 @@ router.get("/orders", getAllOrders);
 router.patch("/orders/:orderId/status", adminUpdateOrderStatus);
 router.delete("/orders/:orderId", adminDeleteOrder);
 
-// ── Users ────────────────────────────────────────────────────────────────────
+// ── Users ─────────────────────────────────────────────────────────────────────
 router.get("/users", getAllUsers);
 router.get("/users/:id", getUserById);
 router.patch("/users/:id/role", updateUserRole);

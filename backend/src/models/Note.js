@@ -7,12 +7,12 @@ const noteSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      unique: true, // ✅ already creates index — removed noteSchema.index({ name: 1 })
+      unique: true, 
     },
 
     slug: {
       type: String,
-      unique: true, // ✅ already creates index — removed noteSchema.index({ slug: 1 })
+      unique: true, 
       lowercase: true,
     },
 
@@ -77,7 +77,7 @@ noteSchema.pre("validate", async function () {
   this.slug = slug;
 });
 
-// ✅ family is not unique so schema.index() is correct here — kept
+
 noteSchema.index({ family: 1 });
 
 export default mongoose.model("Note", noteSchema);

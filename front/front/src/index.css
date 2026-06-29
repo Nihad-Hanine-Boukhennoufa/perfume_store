@@ -1,0 +1,125 @@
+/* ============================================================
+   L'AURA Parfumerie — Global Design System
+   ============================================================ */
+
+@import "tailwindcss";
+
+/* Google Fonts — add this to index.html <head>:
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+*/
+
+:root {
+  /* ── Fonts ── */
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-body:    'Jost', system-ui, sans-serif;
+
+  /* ── Dark backgrounds ── */
+  --color-obsidian:  #0D0D0D;   /* page background   */
+  --color-ink:       #1A1A1A;   /* navbar / footer   */
+  --color-charcoal:  #2A2A2A;   /* borders / dividers*/
+  --color-smoke:     #3D3D3D;   /* subtle borders    */
+  --color-mist:      #8A8A8A;   /* secondary text    */
+
+  /* ── Gold accent ── */
+  --color-gold:       #C9A84C;  /* primary accent    */
+  --color-gold-light: #E8D5A3;  /* hover / soft glow */
+  --color-gold-dark:  #8B6914;  /* dark variant      */
+
+  /* ── Light text ── */
+  --color-pearl: #F0EDE8;       /* primary text      */
+  --color-cream: #FAF8F5;       /* headings / white  */
+
+  /* ── Legacy aliases (keep for backward compat) ── */
+  --color-primary:   var(--color-obsidian);
+  --color-secondary: var(--color-pearl);
+  --color-accent:    var(--color-gold);
+  --color-dark:      var(--color-ink);
+}
+
+/* ── Base reset ───────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background:  var(--color-obsidian);
+  color:       var(--color-pearl);
+  font-family: var(--font-body);
+  font-weight: 300;
+  line-height: 1.7;
+  -webkit-font-smoothing:  antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Typography helpers ──────────────────────────────────────────────── */
+.font-display { font-family: var(--font-display); }
+.font-body    { font-family: var(--font-body);    }
+
+.text-gold       { color: var(--color-gold);       }
+.text-gold-light { color: var(--color-gold-light); }
+.text-pearl      { color: var(--color-pearl);      }
+.text-mist       { color: var(--color-mist);       }
+
+/* Display heading — large serif */
+.heading-display {
+  font-family: var(--font-display);
+  font-weight: 300;
+  letter-spacing: 1px;
+  color: var(--color-pearl);
+}
+
+/* Eyebrow / label — tiny spaced caps */
+.label-eyebrow {
+  font-family: var(--font-body);
+  font-size: 9px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--color-gold);
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--color-obsidian); }
+::-webkit-scrollbar-thumb { background: var(--color-charcoal); border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-smoke); }
+
+/* ── Selection ───────────────────────────────────────────────────────── */
+::selection {
+  background: rgba(201, 168, 76, 0.25);
+  color: var(--color-pearl);
+}
+
+/* ── Focus outline ───────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 1px solid var(--color-gold);
+  outline-offset: 2px;
+}
+
+/* ── Typography scale — bigger & heavier globally ── */
+body {
+  font-size: 15px;
+  font-weight: 400;
+}
+
+/* Inputs & buttons inherit font */
+input, button, select, textarea {
+  font-family: var(--font-body);
+}
+
+/* Nav links */
+.text-xs   { font-size: 12px  !important; }
+.text-sm   { font-size: 14px  !important; }
+.text-base { font-size: 16px  !important; }
+.text-lg   { font-size: 18px  !important; }
+
+/* Cormorant display — always use weight 500 not 300 */
+.font-display, [style*="font-display"] {
+  font-weight: 500;
+}

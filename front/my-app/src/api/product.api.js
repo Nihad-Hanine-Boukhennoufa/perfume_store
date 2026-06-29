@@ -1,4 +1,4 @@
-import instance from "../api/axios";
+import instance from "./axios";
 
 
   // Get all products with pagination

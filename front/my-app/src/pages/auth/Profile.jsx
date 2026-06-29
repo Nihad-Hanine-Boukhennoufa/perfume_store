@@ -1,6 +1,6 @@
-import { useContext, useState, useCallback, useRef } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useContext, useCallback, useRef } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import {
   User, Mail, LogOut, Package, ImageIcon,
   Clock, Truck, CheckCircle2, XCircle, X, Trash2,
@@ -8,8 +8,9 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import AuthContext from "../../context/AuthContext.jsx";
-import { getMyOrders, cancelOrder } from "../../api/order.api.js";
 import { updateMe } from "../../api/user.api.js";
+import { cancelOrder } from "../../api/order.api.js";
+import { useMyOrders } from "../../hooks/useOrders.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -30,10 +31,16 @@ const inputStyle = {
   padding: "11px 14px", transition: "border-color .2s",
 };
 
-// Dismissed orders — per user in localStorage
-const KEY = (id) => `dismissed_orders_${id}`;
+// Dismissed orders stored per user in localStorage
+const KEY          = (id) => `dismissed_orders_${id}`;
 const loadDismissed = (id) => { try { return new Set(JSON.parse(localStorage.getItem(KEY(id))) ?? []); } catch { return new Set(); } };
-const saveDismissed = (id, s) => { try { localStorage.setItem(KEY(id), JSON.stringify([...s])); } catch {} };
+const saveDismissed = (id, s) => {
+  try {
+    localStorage.setItem(KEY(id), JSON.stringify([...s]));
+  } catch {
+    // Ignore localStorage errors (e.g. storage unavailable or quota exceeded)
+  }
+};
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
@@ -51,21 +58,19 @@ function StatusBadge({ status }) {
 // ─── Edit Profile Form ────────────────────────────────────────────────────────
 
 function EditProfileSection({ user, onClose }) {
-  const queryClient = useQueryClient();
-  const { updateUserData } = useContext(AuthContext);
-  const fileRef = useRef(null);
-
-  const [name,    setName]    = useState(user.name  ?? "");
-  const [preview, setPreview] = useState(user.image ?? null);
-  const [imgFile, setImgFile] = useState(null);
-  const [error,   setError]   = useState("");
+  const queryClient            = useQueryClient();
+  const { updateUserData }     = useContext(AuthContext);
+  const fileRef                = useRef(null);
+  const [name,    setName]     = useState(user.name  ?? "");
+  const [preview, setPreview]  = useState(user.image ?? null);
+  const [imgFile, setImgFile]  = useState(null);
+  const [error,   setError]    = useState("");
 
   const mutation = useMutation({
-    mutationFn: (userData) => updateMe(userData),
+    mutationFn: updateMe,
     onSuccess: (res) => {
-      // Update auth context so Navbar reflects the new name/image instantly
-      if (typeof updateUserData === "function") updateUserData(res.data);
-      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      if (typeof updateUserData === "function") updateUserData(res);
+      queryClient.invalidateQueries({ queryKey: ["me"] });
       toast.success("Profile updated");
       onClose();
     },
@@ -97,7 +102,6 @@ function EditProfileSection({ user, onClose }) {
     <div className="mb-6 p-5"
       style={{ background: "var(--color-ink)", border: "0.5px solid var(--color-gold-dark)" }}>
 
-      {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <p className="text-[9px] tracking-[4px] uppercase"
           style={{ color: "var(--color-gold)", fontFamily: "var(--font-body)" }}>Edit Profile</p>
@@ -108,7 +112,6 @@ function EditProfileSection({ user, onClose }) {
         ><X size={15} strokeWidth={1.5} /></button>
       </div>
 
-      {/* Error */}
       {error && (
         <div className="flex items-center gap-2 px-3 py-2.5 mb-4 text-sm"
           style={{ background: "rgba(160,60,60,0.12)", border: "0.5px solid rgba(160,60,60,0.3)", color: "#c08080", fontFamily: "var(--font-body)" }}>
@@ -118,48 +121,37 @@ function EditProfileSection({ user, onClose }) {
       )}
 
       <form onSubmit={submit} className="flex flex-col gap-5">
-
         {/* Avatar picker */}
         <div className="flex items-center gap-5">
-          {/* Avatar preview */}
-          <div className="relative flex-shrink-0">
+          <div className="relative shrink-0">
             {preview
-              ? <img src={preview} alt="Avatar"
-                  className="w-16 h-16 rounded-full object-cover"
+              ? <img src={preview} alt="Avatar" className="w-16 h-16 rounded-full object-cover"
                   style={{ border: "0.5px solid var(--color-gold)" }} />
               : <div className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-medium uppercase"
                   style={{ background: "rgba(201,168,76,0.1)", border: "0.5px solid var(--color-gold-dark)", color: "var(--color-gold)", fontFamily: "var(--font-body)" }}>
                   {user.name?.[0] ?? <User size={22} />}
                 </div>
             }
-            {/* Camera overlay */}
             <button type="button" onClick={() => fileRef.current?.click()}
-              className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center transition-colors duration-150"
+              className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center"
               style={{ background: "var(--color-gold)", border: "2px solid var(--color-obsidian)", cursor: "pointer" }}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--color-gold-light)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "var(--color-gold)")}
-            >
-              <Camera size={11} style={{ color: "var(--color-obsidian)" }} />
-            </button>
+            ><Camera size={11} style={{ color: "var(--color-obsidian)" }} /></button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImage} />
           </div>
 
           <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium" style={{ color: "var(--color-pearl)", fontFamily: "var(--font-body)" }}>
-              {user.name}
-            </p>
+            <p className="text-sm font-medium" style={{ color: "var(--color-pearl)", fontFamily: "var(--font-body)" }}>{user.name}</p>
             <button type="button" onClick={() => fileRef.current?.click()}
-              className="text-[10px] tracking-[1px] uppercase text-left transition-colors duration-150"
+              className="text-[10px] tracking-[1px] uppercase text-left"
               style={{ color: "var(--color-mist)", fontFamily: "var(--font-body)", background: "none", border: "none", cursor: "pointer" }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-gold)")}
               onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-mist)")}
-            >
-              {imgFile ? "Change photo" : "Upload photo"}
-            </button>
+            >{imgFile ? "Change photo" : "Upload photo"}</button>
             {imgFile && (
-              <button type="button"
-                onClick={() => { setImgFile(null); setPreview(user.image ?? null); }}
-                className="text-[10px] tracking-[1px] uppercase text-left transition-colors duration-150"
+              <button type="button" onClick={() => { setImgFile(null); setPreview(user.image ?? null); }}
+                className="text-[10px] tracking-[1px] uppercase text-left"
                 style={{ color: "var(--color-smoke)", fontFamily: "var(--font-body)", background: "none", border: "none", cursor: "pointer" }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = "#c47a7a")}
                 onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-smoke)")}
@@ -168,11 +160,12 @@ function EditProfileSection({ user, onClose }) {
           </div>
         </div>
 
-        {/* Name field */}
+        {/* Name */}
         <div>
           <label className="block text-[9px] tracking-[3px] uppercase mb-2"
             style={{ color: "var(--color-mist)", fontFamily: "var(--font-body)" }}>Full Name</label>
-          <input type="text" value={name} onChange={(e) => { setName(e.target.value); setError(""); }}
+          <input type="text" value={name}
+            onChange={(e) => { setName(e.target.value); setError(""); }}
             placeholder="Your name" style={inputStyle}
             onFocus={(e) => (e.currentTarget.style.borderColor = "var(--color-gold)")}
             onBlur={(e) => (e.currentTarget.style.borderColor = "var(--color-smoke)")}
@@ -183,25 +176,22 @@ function EditProfileSection({ user, onClose }) {
         <div>
           <label className="block text-[9px] tracking-[3px] uppercase mb-2"
             style={{ color: "var(--color-mist)", fontFamily: "var(--font-body)" }}>
-            Email <span style={{ color: "var(--color-smoke)", letterSpacing: "1px" }}>— cannot be changed here</span>
+            Email <span style={{ color: "var(--color-smoke)" }}>— cannot be changed here</span>
           </label>
           <input type="email" value={user.email} readOnly
             style={{ ...inputStyle, color: "var(--color-smoke)", cursor: "not-allowed", opacity: 0.6 }} />
         </div>
 
-        {/* Actions */}
         <div className="flex gap-3">
           <button type="submit" disabled={mutation.isPending}
-            className="flex items-center gap-2 px-6 py-2.5 text-[10px] tracking-[2px] uppercase transition-all duration-200 disabled:opacity-50"
+            className="flex items-center gap-2 px-6 py-2.5 text-[10px] tracking-[2px] uppercase disabled:opacity-50"
             style={{ background: "var(--color-gold)", color: "var(--color-obsidian)", border: "0.5px solid var(--color-gold)", fontFamily: "var(--font-body)", borderRadius: "0", cursor: "pointer" }}
             onMouseEnter={(e) => { if (!mutation.isPending) e.currentTarget.style.background = "var(--color-gold-light)"; }}
             onMouseLeave={(e) => { if (!mutation.isPending) e.currentTarget.style.background = "var(--color-gold)"; }}
-          >
-            <Save size={11} strokeWidth={1.5} />
-            {mutation.isPending ? "Saving…" : "Save Changes"}
-          </button>
+          ><Save size={11} strokeWidth={1.5} />{mutation.isPending ? "Saving…" : "Save Changes"}</button>
+
           <button type="button" onClick={onClose}
-            className="px-6 py-2.5 text-[10px] tracking-[2px] uppercase transition-all duration-200"
+            className="px-6 py-2.5 text-[10px] tracking-[2px] uppercase"
             style={{ background: "transparent", color: "var(--color-mist)", border: "0.5px solid var(--color-charcoal)", fontFamily: "var(--font-body)", borderRadius: "0", cursor: "pointer" }}
             onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--color-smoke)"; e.currentTarget.style.color = "var(--color-pearl)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--color-charcoal)"; e.currentTarget.style.color = "var(--color-mist)"; }}
@@ -222,9 +212,8 @@ function OrderCard({ order, onCancel, isCancelling, onDismiss }) {
 
   return (
     <div style={{ background: "var(--color-ink)", border: "0.5px solid var(--color-charcoal)" }}>
-      {/* Header */}
       <button onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-4 px-4 py-4 text-left transition-colors duration-150"
+        className="w-full flex items-center gap-4 px-4 py-4 text-left"
         style={{ background: "none", border: "none", cursor: "pointer" }}
         onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.02)")}
         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
@@ -239,11 +228,10 @@ function OrderCard({ order, onCancel, isCancelling, onDismiss }) {
         <span style={{ fontFamily: "var(--font-display)", fontSize: "16px", fontWeight: 400, color: "var(--color-pearl)" }}>
           {fmt$(order.total)}
         </span>
-        <ChevronRight size={13} strokeWidth={1.5} className="flex-shrink-0 transition-transform duration-200"
+        <ChevronRight size={13} strokeWidth={1.5} className="shrink-0 transition-transform duration-200"
           style={{ color: "var(--color-smoke)", transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }} />
       </button>
 
-      {/* Expanded */}
       {expanded && (
         <div style={{ borderTop: "0.5px solid var(--color-charcoal)" }}>
           <div className="px-4 py-4 flex flex-col gap-3">
@@ -253,8 +241,8 @@ function OrderCard({ order, onCancel, isCancelling, onDismiss }) {
               const primaryImg = product?.images?.find((img) => img.isPrimary) ?? product?.images?.[0];
               return (
                 <div key={i} className="flex items-center gap-3">
-                  <div className="flex-shrink-0 overflow-hidden"
-                    style={{ width: "44px", height: "44px", background: "var(--color-obsidian)", border: "0.5px solid var(--color-charcoal)" }}>
+                  <div className="shrink-0 overflow-hidden"
+                    style={{ width: 44, height: 44, background: "var(--color-obsidian)", border: "0.5px solid var(--color-charcoal)" }}>
                     {primaryImg?.url
                       ? <img src={primaryImg.url} alt={name} className="w-full h-full object-cover" />
                       : <div className="w-full h-full flex items-center justify-center">
@@ -267,7 +255,7 @@ function OrderCard({ order, onCancel, isCancelling, onDismiss }) {
                       style={{ color: "var(--color-pearl)", fontFamily: "var(--font-body)" }}>{name}</p>
                     <p className="text-[11px]"
                       style={{ color: "var(--color-smoke)", fontFamily: "var(--font-body)" }}>
-                      {fmt$(item.price)} × {item.quantity}
+                      {item.volume}ml · {fmt$(item.price)} × {item.quantity}
                     </p>
                   </div>
                   <span style={{ color: "var(--color-mist)", fontFamily: "var(--font-display)", fontSize: "14px" }}>
@@ -277,11 +265,12 @@ function OrderCard({ order, onCancel, isCancelling, onDismiss }) {
               );
             })}
           </div>
+
           <div className="flex items-center gap-3 px-4 pb-4 pt-3"
             style={{ borderTop: "0.5px solid var(--color-charcoal)" }}>
             {order.status === "pending" && (
               <button onClick={() => onCancel(order._id)} disabled={isCancelling}
-                className="flex items-center gap-1.5 text-[10px] tracking-[2px] uppercase transition-colors duration-150 disabled:opacity-50"
+                className="flex items-center gap-1.5 text-[10px] tracking-[2px] uppercase disabled:opacity-50"
                 style={{ color: "#c08080", fontFamily: "var(--font-body)", background: "none", border: "none", cursor: "pointer" }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = "#d09090")}
                 onMouseLeave={(e) => (e.currentTarget.style.color = "#c08080")}
@@ -289,7 +278,7 @@ function OrderCard({ order, onCancel, isCancelling, onDismiss }) {
             )}
             {order.status === "cancelled" && (
               <button onClick={() => onDismiss(order._id)}
-                className="flex items-center gap-1.5 text-[10px] tracking-[2px] uppercase transition-colors duration-150"
+                className="flex items-center gap-1.5 text-[10px] tracking-[2px] uppercase"
                 style={{ color: "var(--color-smoke)", fontFamily: "var(--font-body)", background: "none", border: "none", cursor: "pointer" }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-mist)")}
                 onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-smoke)")}
@@ -304,12 +293,11 @@ function OrderCard({ order, onCancel, isCancelling, onDismiss }) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-const Profile = () => {
-  const { user, logout } = useContext(AuthContext);
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-
+function Profile() {
+  const { user, logout }   = useContext(AuthContext);
+  const queryClient        = useQueryClient();
   const [editing, setEditing] = useState(false);
+
   const [dismissed, setDismissed] = useState(() =>
     user ? loadDismissed(user._id ?? user.id) : new Set()
   );
@@ -324,30 +312,32 @@ const Profile = () => {
     toast.success("Order removed from your list");
   }, [user]);
 
-  const { data: orders, isLoading, isError } = useQuery({
-    queryKey: ["orders"],
-    queryFn: getMyOrders,
-    enabled: !!user,
-  });
+  // ✅ FIX: use useMyOrders hook — consistent queryKey ["myOrders"]
+  const { data: orders, isLoading, isError } = useMyOrders();
 
   const cancelMutation = useMutation({
     mutationFn: cancelOrder,
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["orders"] }); toast.success("Order cancelled"); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["myOrders"] });
+      toast.success("Order cancelled");
+    },
     onError: (err) => toast.error(err?.response?.data?.message ?? "Failed to cancel order"),
   });
 
-  const visibleOrders = orders?.filter((o) => !dismissed.has(o._id)) ?? [];
+  const visibleOrders = (orders ?? []).filter((o) => !dismissed.has(o._id));
 
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[70vh] text-center px-5"
         style={{ background: "var(--color-obsidian)" }}>
-        <User size={36} strokeWidth={1} style={{ color: "var(--color-charcoal)", marginBottom: "16px" }} />
-        <p className="text-lg mb-6" style={{ color: "var(--color-mist)", fontFamily: "var(--font-display)" }}>
+        <User size={36} strokeWidth={1} style={{ color: "var(--color-charcoal)", marginBottom: 16 }} />
+        <p className="text-lg mb-6"
+          style={{ color: "var(--color-mist)", fontFamily: "var(--font-display)" }}>
           Please sign in to view your profile
         </p>
-        <Link to="/login" className="px-8 py-3 text-[10px] tracking-[3px] uppercase transition-all duration-200"
-          style={{ background: "var(--color-gold)", color: "var(--color-obsidian)", border: "0.5px solid var(--color-gold)", fontFamily: "var(--font-body)" }}>
+        <Link to="/login"
+          className="px-8 py-3 text-[10px] tracking-[3px] uppercase"
+          style={{ background: "var(--color-gold)", color: "var(--color-obsidian)", fontFamily: "var(--font-body)" }}>
           Sign In
         </Link>
       </div>
@@ -358,7 +348,7 @@ const Profile = () => {
     <div style={{ background: "var(--color-obsidian)", minHeight: "100vh" }}>
       <div className="max-w-3xl mx-auto px-5 sm:px-8 py-10">
 
-        {/* Page header */}
+        {/* Header */}
         <div className="mb-8">
           <p className="text-[9px] tracking-[5px] uppercase mb-1"
             style={{ color: "var(--color-gold)", fontFamily: "var(--font-body)" }}>Account</p>
@@ -368,27 +358,23 @@ const Profile = () => {
           </h1>
         </div>
 
-        {/* ── Edit form (shown when editing) ───────────────────────── */}
-        {editing && (
-          <EditProfileSection user={user} onClose={() => setEditing(false)} />
-        )}
+        {/* Edit form */}
+        {editing && <EditProfileSection user={user} onClose={() => setEditing(false)} />}
 
-        {/* ── User card (shown when NOT editing) ───────────────────── */}
+        {/* User card */}
         {!editing && (
           <div className="flex items-center gap-5 p-5 mb-8"
             style={{ background: "var(--color-ink)", border: "0.5px solid var(--color-charcoal)" }}>
-            {/* Avatar */}
             {user.image
               ? <img src={user.image} alt={user.name}
-                  className="w-14 h-14 rounded-full object-cover flex-shrink-0"
+                  className="w-14 h-14 rounded-full object-cover shrink-0"
                   style={{ border: "0.5px solid var(--color-gold)" }} />
-              : <div className="w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0 text-lg font-medium uppercase"
+              : <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0 text-lg font-medium uppercase"
                   style={{ background: "rgba(201,168,76,0.1)", border: "0.5px solid var(--color-gold-dark)", color: "var(--color-gold)", fontFamily: "var(--font-body)" }}>
                   {user.name?.[0] ?? <User size={20} />}
                 </div>
             }
 
-            {/* Info */}
             <div className="flex-1 min-w-0">
               <p className="text-base font-medium truncate"
                 style={{ color: "var(--color-pearl)", fontFamily: "var(--font-body)" }}>{user.name}</p>
@@ -398,30 +384,25 @@ const Profile = () => {
               </p>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <button onClick={() => setEditing(true)}
-                className="flex items-center gap-2 px-4 py-2 text-[10px] tracking-[2px] uppercase transition-all duration-200"
+                className="flex items-center gap-2 px-4 py-2 text-[10px] tracking-[2px] uppercase"
                 style={{ color: "var(--color-mist)", border: "0.5px solid var(--color-charcoal)", fontFamily: "var(--font-body)", background: "transparent", borderRadius: "0", cursor: "pointer" }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--color-gold)"; e.currentTarget.style.color = "var(--color-gold)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--color-charcoal)"; e.currentTarget.style.color = "var(--color-mist)"; }}
-              >
-                <Pencil size={11} strokeWidth={1.5} /> Edit
-              </button>
+              ><Pencil size={11} strokeWidth={1.5} /> Edit</button>
 
               <button onClick={logout}
-                className="flex items-center gap-2 px-4 py-2 text-[10px] tracking-[2px] uppercase transition-colors duration-150"
+                className="flex items-center gap-2 px-4 py-2 text-[10px] tracking-[2px] uppercase"
                 style={{ color: "var(--color-smoke)", border: "0.5px solid var(--color-charcoal)", fontFamily: "var(--font-body)", background: "transparent", borderRadius: "0", cursor: "pointer" }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = "rgba(160,60,60,0.5)"; e.currentTarget.style.color = "#c08080"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--color-charcoal)"; e.currentTarget.style.color = "var(--color-smoke)"; }}
-              >
-                <LogOut size={11} strokeWidth={1.5} /> Logout
-              </button>
+              ><LogOut size={11} strokeWidth={1.5} /> Logout</button>
             </div>
           </div>
         )}
 
-        {/* ── Orders ─────────────────────────────────────────────────── */}
+        {/* Orders */}
         <div>
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -433,7 +414,8 @@ const Profile = () => {
               </h2>
             </div>
             {visibleOrders.length > 0 && (
-              <span className="text-sm" style={{ color: "var(--color-smoke)", fontFamily: "var(--font-body)" }}>
+              <span className="text-sm"
+                style={{ color: "var(--color-smoke)", fontFamily: "var(--font-body)" }}>
                 {visibleOrders.length} order{visibleOrders.length !== 1 ? "s" : ""}
               </span>
             )}
@@ -459,8 +441,8 @@ const Profile = () => {
             <div className="flex flex-col items-center py-20 text-center"
               style={{ border: "0.5px solid var(--color-charcoal)" }}>
               <Package size={32} strokeWidth={1}
-                style={{ color: "var(--color-charcoal)", marginBottom: "16px" }} />
-              <p style={{ fontFamily: "var(--font-display)", fontSize: "20px", fontWeight: 400, color: "var(--color-mist)", marginBottom: "6px" }}>
+                style={{ color: "var(--color-charcoal)", marginBottom: 16 }} />
+              <p style={{ fontFamily: "var(--font-display)", fontSize: "20px", color: "var(--color-mist)", marginBottom: 6 }}>
                 No orders yet
               </p>
               <p className="text-sm mb-8"
@@ -468,8 +450,8 @@ const Profile = () => {
                 Your orders will appear here
               </p>
               <Link to="/products"
-                className="px-8 py-3 text-[10px] tracking-[3px] uppercase transition-all duration-200"
-                style={{ background: "var(--color-gold)", color: "var(--color-obsidian)", border: "0.5px solid var(--color-gold)", fontFamily: "var(--font-body)" }}>
+                className="px-8 py-3 text-[10px] tracking-[3px] uppercase"
+                style={{ background: "var(--color-gold)", color: "var(--color-obsidian)", fontFamily: "var(--font-body)" }}>
                 Browse Collection
               </Link>
             </div>
@@ -490,6 +472,6 @@ const Profile = () => {
       </div>
     </div>
   );
-};
+}
 
 export default Profile;

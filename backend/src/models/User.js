@@ -37,6 +37,19 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+
+    // ── Forgot Password ───────────────────────────────────────────────────────
+    // We store the HASHED token in DB — raw token is only in the email link.
+    // If the DB is ever leaked, the tokens are useless without the raw value.
+    resetPasswordToken: {
+      type: String,
+      select: false,
+    },
+
+    resetPasswordExpire: {
+      type: Date,
+      select: false,
+    },
   },
   { timestamps: true }
 );

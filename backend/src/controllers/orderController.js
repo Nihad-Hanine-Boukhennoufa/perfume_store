@@ -3,12 +3,10 @@ import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
 import { createTransaction } from "../services/transactionService.js";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
 const VALID_STATUSES      = ["pending", "shipped", "delivered", "cancelled"];
 const FINALIZED_STATUS    = "delivered";
 const STOCK_HELD_STATUSES = ["pending", "shipped"];
 
-// ─── Populate helper ──────────────────────────────────────────────────────────
 const populateOrders = (query) =>
   query.populate({
     path:     "items.productId",
@@ -16,17 +14,16 @@ const populateOrders = (query) =>
     populate: { path: "brand", select: "name" },
   });
 
-// ─── Stock helpers (variant-aware) ───────────────────────────────────────────
+// ─── Stock helpers ────────────────────────────────────────────────────────────
 
-// FIX: stock lives in variants[].stock — use arrayFilters to target exact variant
 const decrementStock = async (items) => {
   const ops = items.map((item) => ({
     updateOne: {
       filter: {
-        _id: item.productId,
+        _id:      item.productId,
         variants: { $elemMatch: { volume: item.volume, stock: { $gte: item.quantity } } },
       },
-      update: { $inc: { "variants.$[v].stock": -item.quantity } },
+      update:       { $inc: { "variants.$[v].stock": -item.quantity } },
       arrayFilters: [{ "v.volume": item.volume }],
     },
   }));
@@ -38,16 +35,14 @@ const decrementStock = async (items) => {
 const restoreStock = async (items) => {
   const ops = items.map((item) => ({
     updateOne: {
-      filter: { _id: item.productId },
-      update: { $inc: { "variants.$[v].stock": item.quantity } },
+      filter:       { _id: item.productId },
+      update:       { $inc: { "variants.$[v].stock": item.quantity } },
       arrayFilters: [{ "v.volume": item.volume }],
     },
   }));
-
   await Product.bulkWrite(ops);
 };
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
 const getVariant = (product, volume) =>
   product.variants.find((v) => v.volume === Number(volume)) || null;
 
@@ -71,7 +66,7 @@ export const createOrder = async (req, res, next) => {
         return res.status(404).json({ success: false, message: "Product not found" });
       }
 
-      const variant = getVariant(product, buyNowVolume);
+      const variant  = getVariant(product, buyNowVolume);
       if (!variant) {
         return res.status(400).json({
           success: false,
@@ -162,7 +157,12 @@ export const createOrder = async (req, res, next) => {
           });
         }
 
-        items.push({ productId: item.productId._id, volume: item.volume, quantity: item.quantity, price: variant.price });
+        items.push({
+          productId: item.productId._id,
+          volume:    item.volume,
+          quantity:  item.quantity,
+          price:     variant.price,
+        });
       }
 
       cart.items = [];
@@ -172,12 +172,19 @@ export const createOrder = async (req, res, next) => {
       return res.status(400).json({ success: false, message: "No products selected for order" });
     }
 
+    // Atomically decrement stock
     const stockOk = await decrementStock(items);
     if (!stockOk) {
       return res.status(400).json({ success: false, message: "Not enough stock for one or more products" });
     }
 
-    if (cartToSave) await cartToSave.save();
+    // ✅ FIX 2: rollback stock if cart save fails
+    try {
+      if (cartToSave) await cartToSave.save();
+    } catch (err) {
+      await restoreStock(items);
+      throw err;
+    }
 
     const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const order = await Order.create({ userId, items, total });
@@ -264,9 +271,7 @@ export const adminUpdateOrderStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: "Delivered orders cannot be changed" });
     }
 
-    const previousStatus = order.status;
-
-    if (newStatus === "cancelled" && STOCK_HELD_STATUSES.includes(previousStatus)) {
+    if (newStatus === "cancelled" && STOCK_HELD_STATUSES.includes(order.status)) {
       await restoreStock(order.items);
     }
 

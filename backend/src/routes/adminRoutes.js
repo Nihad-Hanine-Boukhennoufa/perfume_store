@@ -12,7 +12,6 @@ import {
   deleteUser,
 } from "../controllers/userController.js";
 import { verifyToken, verifyAdmin } from "../middleware/authMiddleware.js";
-// ✅ FIX: removed unused `uploadAvatar` import — nothing in this router uploads files
 
 const router = express.Router();
 

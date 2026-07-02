@@ -1,221 +1,236 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  X,
-  Upload,
-  Plus,
-  Trash2,
-  Loader2,
-  ImageIcon,
-  ChevronDown,
-} from "lucide-react";
-import instance from "../../api/axios.js";
+import { X, Upload, Plus, Trash2, ChevronDown } from "lucide-react";
+import { getAllBrands } from "../../api/brand.api.js";
+import { getAllNotes  } from "../../api/note.api.js";
 
-// ─── Constants (mirror your schema enums exactly) ─────────────────────────────
+// ─── Constants (mirror schema enums exactly) ──────────────────────────────────
 
-const GENDERS        = ["Men", "Women", "Unisex"];
-const CONCENTRATIONS = ["EDP", "EDT", "Perfume"];
-const SCENT_TYPES    = ["Classic", "Floral", "Woody", "Fresh", "Oriental", "Citrus", "Aquatic", "Fruity", "Leather","Sweet", "Powdery","Spicy","Aromatic"];
-const SEASONS        = ["Winter", "Summer","Spring", "All Seasons"];
+const ALLOWED_VOLUMES  = [5, 10, 15, 30, 50, 75, 90, 100, 125, 150, 200];
+const GENDERS          = ["Men", "Women", "Unisex"];
+const CONCENTRATIONS   = ["EDC", "EDT", "EDP", "Parfum", "Extrait de Parfum"];
+const SCENT_TYPES      = [
+  "Classic","Floral","Woody","Fresh","Oriental","Citrus","Aquatic",
+  "Fruity","Leather","Sweet","Powdery","Spicy","Aromatic","Green","Amber","Musky","Gourmand",
+];
+const SEASONS          = ["Winter", "Spring", "Summer", "Autumn", "All Seasons"];
+const NOTE_LEVELS      = ["top", "heart", "base"];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Shared styles ────────────────────────────────────────────────────────────
 
-const fetchBrands = async () => {
-  const { data } = await instance.get("/brands");
-  return data.data;
+const inputStyle = {
+  background: "var(--color-charcoal)", border: "0.5px solid var(--color-smoke)",
+  color: "var(--color-pearl)", fontFamily: "var(--font-body)", borderRadius: 0,
+  width: "100%", outline: "none", fontSize: "13px",
+  padding: "11px 14px", transition: "border-color .2s",
 };
 
-// Stable ID generator for note rows — avoids index-as-key issues
-let _noteIdCounter = 0;
-const nextNoteId = () => `note_${++_noteIdCounter}`;
-
-const Label = ({ children, required }) => (
-  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-    {children}{required && <span className="text-red-400 ml-0.5">*</span>}
+const LuxLabel = ({ children, required }) => (
+  <label className="block text-[9px] tracking-[3px] uppercase mb-2"
+    style={{ color: "var(--color-mist)", fontFamily: "var(--font-body)" }}>
+    {children}{required && <span style={{ color: "#c08080" }}> *</span>}
   </label>
 );
 
-const Input = ({ className = "", ...props }) => (
-  <input
-    {...props}
-    className={`w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${className}`}
+const LuxInput = ({ ...props }) => (
+  <input {...props} style={inputStyle}
+    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--color-gold)")}
+    onBlur={(e)  => (e.currentTarget.style.borderColor = "var(--color-smoke)")}
   />
 );
 
-const Select = ({ children, className = "", ...props }) => (
+const LuxSelect = ({ children, ...props }) => (
   <div className="relative">
-    <select
-      {...props}
-      className={`w-full appearance-none px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors pr-9 ${className}`}
-    >
-      {children}
-    </select>
-    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+    <select {...props}
+      style={{ ...inputStyle, appearance: "none", paddingRight: 36 }}
+      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--color-gold)")}
+      onBlur={(e)  => (e.currentTarget.style.borderColor = "var(--color-smoke)")}
+    >{children}</select>
+    <ChevronDown size={13} strokeWidth={1.5}
+      className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+      style={{ color: "var(--color-smoke)" }} />
   </div>
 );
+
+const SectionTitle = ({ children }) => (
+  <p className="text-[9px] tracking-[4px] uppercase mb-4 pb-2"
+    style={{ color: "var(--color-gold)", fontFamily: "var(--font-body)", borderBottom: "0.5px solid var(--color-charcoal)" }}>
+    {children}
+  </p>
+);
+
+// ─── Variant Row ─────────────────────────────────────────────────────────────
+
+function VariantRow({ variant, onChange, onRemove, usedVolumes }) {
+  const available = ALLOWED_VOLUMES.filter(
+    (v) => v === variant.volume || !usedVolumes.includes(v)
+  );
+  return (
+    <div className="flex items-center gap-2 p-3"
+      style={{ background: "var(--color-obsidian)", border: "0.5px solid var(--color-charcoal)" }}>
+      {/* Volume */}
+      <div className="relative" style={{ minWidth: 90 }}>
+        <select value={variant.volume}
+          onChange={(e) => onChange({ ...variant, volume: Number(e.target.value) })}
+          style={{ ...inputStyle, appearance: "none", paddingRight: 28, padding: "8px 28px 8px 10px", fontSize: 12 }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = "var(--color-gold)")}
+          onBlur={(e)  => (e.currentTarget.style.borderColor = "var(--color-smoke)")}
+        >
+          {available.map((v) => (
+            <option key={v} value={v} style={{ background: "var(--color-ink)" }}>{v} ml</option>
+          ))}
+        </select>
+        <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
+          style={{ color: "var(--color-smoke)" }} />
+      </div>
+      {/* Price */}
+      <input type="number" min="0" step="0.01" placeholder="Price $"
+        value={variant.price}
+        onChange={(e) => onChange({ ...variant, price: e.target.value })}
+        style={{ ...inputStyle, padding: "8px 10px", fontSize: 12, flex: 1 }}
+        onFocus={(e) => (e.currentTarget.style.borderColor = "var(--color-gold)")}
+        onBlur={(e)  => (e.currentTarget.style.borderColor = "var(--color-smoke)")}
+      />
+      {/* Stock */}
+      <input type="number" min="0" placeholder="Stock"
+        value={variant.stock}
+        onChange={(e) => onChange({ ...variant, stock: e.target.value })}
+        style={{ ...inputStyle, padding: "8px 10px", fontSize: 12, flex: 1 }}
+        onFocus={(e) => (e.currentTarget.style.borderColor = "var(--color-gold)")}
+        onBlur={(e)  => (e.currentTarget.style.borderColor = "var(--color-smoke)")}
+      />
+      {/* Available toggle */}
+      <button type="button"
+        onClick={() => onChange({ ...variant, isAvailable: !variant.isAvailable })}
+        className="text-[9px] tracking-[1px] uppercase px-2 py-1.5 shrink-0 transition-all duration-150"
+        style={{
+          color:      variant.isAvailable ? "#70a880"            : "var(--color-smoke)",
+          background: variant.isAvailable ? "rgba(30,80,50,0.2)" : "transparent",
+          border:     `0.5px solid ${variant.isAvailable ? "rgba(60,120,80,0.3)" : "var(--color-charcoal)"}`,
+          fontFamily: "var(--font-body)", borderRadius: 0, cursor: "pointer",
+        }}>
+        {variant.isAvailable ? "In stock" : "Out"}
+      </button>
+      {/* Remove */}
+      <button type="button" onClick={onRemove}
+        className="p-1.5 shrink-0 transition-colors duration-150"
+        style={{ color: "var(--color-smoke)", background: "none", border: "none", cursor: "pointer" }}
+        onMouseEnter={(e) => (e.currentTarget.style.color = "#c08080")}
+        onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-smoke)")}
+      ><Trash2 size={13} strokeWidth={1.5} /></button>
+    </div>
+  );
+}
 
 // ─── Image Drop Zone ──────────────────────────────────────────────────────────
 
 function ImageDropZone({ onFiles }) {
-  const [dragOver, setDragOver] = useState(false);
-
+  const [drag, setDrag] = useState(false);
   const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
+    e.preventDefault(); setDrag(false);
     const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
     if (files.length) onFiles(files);
   };
-
   return (
     <div
-      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-      onDragLeave={() => setDragOver(false)}
+      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+      onDragLeave={() => setDrag(false)}
       onDrop={handleDrop}
-      className={`relative border-2 border-dashed rounded-2xl transition-colors cursor-pointer ${
-        dragOver ? "border-blue-400 bg-blue-50" : "border-gray-200 hover:border-gray-300 bg-gray-50"
-      }`}
+      className="relative flex flex-col items-center justify-center gap-3 py-6 cursor-pointer transition-all duration-200"
+      style={{ border: `0.5px dashed ${drag ? "var(--color-gold)" : "var(--color-smoke)"}`, background: drag ? "rgba(201,168,76,0.04)" : "transparent" }}
     >
-      <input
-        type="file"
-        accept="image/*"
-        multiple
+      <input type="file" accept="image/*" multiple
         onChange={(e) => onFiles(Array.from(e.target.files))}
-        className="absolute inset-0 opacity-0 cursor-pointer"
-      />
-      <div className="flex flex-col items-center justify-center py-6 px-4 text-center pointer-events-none">
-        <div className="w-10 h-10 rounded-xl bg-gray-200 flex items-center justify-center mb-2">
-          <Upload size={18} className="text-gray-400" />
-        </div>
-        <p className="text-sm font-medium text-gray-600">
-          Drop images here or <span className="text-blue-500">browse</span>
-        </p>
-        <p className="text-xs text-gray-400 mt-0.5">PNG, JPG, WEBP — multiple allowed</p>
+        className="absolute inset-0 opacity-0 cursor-pointer" />
+      <div className="w-10 h-10 flex items-center justify-center"
+        style={{ background: "rgba(201,168,76,0.08)", border: "0.5px solid var(--color-gold-dark)" }}>
+        <Upload size={16} strokeWidth={1.5} style={{ color: "var(--color-gold)" }} />
       </div>
+      <p className="text-[10px] tracking-[1px] pointer-events-none"
+        style={{ color: "var(--color-smoke)", fontFamily: "var(--font-body)" }}>
+        Drop images or click to browse · multiple allowed
+      </p>
     </div>
   );
 }
 
-// ─── Note Row ─────────────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
-function NoteRow({ note, index, onChange, onRemove }) {
-  const handleNoteImageChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    // Revoke the old preview URL before creating a new one to avoid memory leaks
-    if (note.imagePreview && !note.existingUrl) {
-      URL.revokeObjectURL(note.imagePreview);
-    }
-
-    onChange(index, {
-      ...note,
-      imageFile: file,
-      imagePreview: URL.createObjectURL(file),
-    });
-  };
-
-  return (
-    <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl border border-gray-100">
-      <label className="relative w-10 h-10 rounded-lg overflow-hidden bg-gray-200 border border-gray-200 flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity">
-        {note.imagePreview ? (
-          <img src={note.imagePreview} alt="" className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <ImageIcon size={14} className="text-gray-400" />
-          </div>
-        )}
-        <input type="file" accept="image/*" onChange={handleNoteImageChange} className="sr-only" />
-      </label>
-
-      <input
-        type="text"
-        value={note.text}
-        onChange={(e) => onChange(index, { ...note, text: e.target.value })}
-        placeholder="e.g. Bergamot, Sandalwood, Musk…"
-        className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
-      />
-
-      <button
-        type="button"
-        onClick={() => onRemove(index)}
-        className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors flex-shrink-0"
-      >
-        <Trash2 size={14} />
-      </button>
-    </div>
-  );
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
-
-const EMPTY_FORM = {
-  name: "",
-  brand: "",
-  description: "",
-  price: "",
-  stock: "",
-  gender: "Men",
-  concentration: "EDP",
-  scentType: [],
-  season: "All Seasons",
-  isFeatured: false,
-  isPublished: true,
-};
+const DEFAULT_VARIANT = () => ({ volume: 50, price: "", stock: "", isAvailable: true });
 
 const ProductModal = ({ isOpen, onClose, product, onSubmit, isLoading }) => {
-  const [form, setForm] = useState(() => {
-    if (!product) return EMPTY_FORM;
-    return {
-      name:          product.name          ?? "",
-      brand:         product.brand?._id    ?? product.brand ?? "",
-      description:   product.description   ?? "",
-      price:         product.price         ?? "",
-      stock:         product.stock         ?? "",
-      gender:        product.gender        ?? "Men",
-      concentration: product.concentration ?? "EDP",
-      scentType:     product.scentType     ?? [],
-      season:        product.season        ?? "All Seasons",
-      isFeatured:    product.isFeatured    ?? false,
-      isPublished:   product.isPublished   ?? true,
-    };
+
+  // ── Form state ─────────────────────────────────────────────────────────────
+  const [form, setForm] = useState(() => ({
+    name:          product?.name          ?? "",
+    brand:         product?.brand?._id    ?? product?.brand ?? "",
+    description:   product?.description   ?? "",
+    gender:        product?.gender        ?? "Men",
+    concentration: product?.concentration ?? "EDP",
+    scentType:     product?.scentType     ?? [],
+    season:        product?.season        ?? [],
+    isFeatured:    product?.isFeatured    ?? false,
+    isPublished:   product?.isPublished   ?? true,
+  }));
+
+  const [variants, setVariants] = useState(
+    product?.variants?.length
+      ? product.variants.map((v) => ({ volume: v.volume, price: v.price, stock: v.stock, isAvailable: v.isAvailable ?? true }))
+      : [DEFAULT_VARIANT()]
+  );
+
+  // notes: { top: [id,...], heart: [id,...], base: [id,...] }
+  const [notes, setNotes] = useState({
+    top:   product?.notes?.top?.map   ((n) => n._id ?? n) ?? [],
+    heart: product?.notes?.heart?.map ((n) => n._id ?? n) ?? [],
+    base:  product?.notes?.base?.map  ((n) => n._id ?? n) ?? [],
   });
 
-  const [newImages, setNewImages] = useState([]);
+  const [newImages,      setNewImages]      = useState([]);
   const [existingImages, setExistingImages] = useState(
     product?.images?.map((img) => ({ ...img, markedForRemoval: false })) ?? []
   );
+  const [error, setError] = useState("");
 
-  // Fix: each note gets a stable `id` so we never use array index as React key
-  const [notes, setNotes] = useState(
-    product?.notes?.map((n) => ({
-      id:           nextNoteId(),
-      text:         n.text         ?? "",
-      imagePreview: n.image?.url   ?? null,
-      imageFile:    null,
-      existingUrl:  n.image?.url   ?? null,
-      existingId:   n.image?.publicId ?? null,
-    })) ?? []
-  );
-
-  const { data: brands = [] } = useQuery({
-    queryKey: ["brands"],
-    queryFn: fetchBrands,
+  // ── Data fetching ──────────────────────────────────────────────────────────
+  const { data: brands = [] } = useQuery({ queryKey: ["brands"], queryFn: getAllBrands, staleTime: 60_000 });
+  const { data: notesData }   = useQuery({
+    queryKey: ["notes", { limit: 200 }],
+    queryFn:  () => getAllNotes({ limit: 200 }),
     staleTime: 60_000,
   });
+  const allNotes = notesData?.data ?? [];
 
-  // ── Field helpers ──────────────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────
   const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
 
-  const toggleScentType = (type) => {
+  const toggleArray = (key, value) =>
     setForm((f) => ({
       ...f,
-      scentType: f.scentType.includes(type)
-        ? f.scentType.filter((t) => t !== type)
-        : [...f.scentType, type],
+      [key]: f[key].includes(value) ? f[key].filter((v) => v !== value) : [...f[key], value],
     }));
+
+  const usedVolumes = variants.map((v) => v.volume);
+
+  const addVariant = () => {
+    const unused = ALLOWED_VOLUMES.find((v) => !usedVolumes.includes(v));
+    if (unused) setVariants((prev) => [...prev, { ...DEFAULT_VARIANT(), volume: unused }]);
   };
 
-  // Fix: revoke object URLs when new images are removed to avoid memory leaks
+  const updateVariant = (i, updated) =>
+    setVariants((prev) => prev.map((v, idx) => idx === i ? updated : v));
+
+  const removeVariant = (i) =>
+    setVariants((prev) => prev.filter((_, idx) => idx !== i));
+
+  const toggleNote = (level, noteId) =>
+    setNotes((prev) => ({
+      ...prev,
+      [level]: prev[level].includes(noteId)
+        ? prev[level].filter((id) => id !== noteId)
+        : [...prev[level], noteId],
+    }));
+
   const handleNewImages = useCallback((files) => {
     setNewImages((prev) => [
       ...prev,
@@ -223,234 +238,193 @@ const ProductModal = ({ isOpen, onClose, product, onSubmit, isLoading }) => {
     ]);
   }, []);
 
-  const removeNewImage = useCallback((index) => {
+  const removeNewImage = useCallback((i) => {
     setNewImages((prev) => {
-      URL.revokeObjectURL(prev[index].preview);
-      return prev.filter((_, i) => i !== index);
+      URL.revokeObjectURL(prev[i].preview);
+      return prev.filter((_, idx) => idx !== i);
     });
   }, []);
 
-  const toggleExistingImageRemoval = (index) =>
+  const toggleExistingRemoval = (i) =>
     setExistingImages((prev) =>
-      prev.map((img, i) => i === index ? { ...img, markedForRemoval: !img.markedForRemoval } : img)
+      prev.map((img, idx) => idx === i ? { ...img, markedForRemoval: !img.markedForRemoval } : img)
     );
-
-  const addNote = () =>
-    setNotes((prev) => [
-      ...prev,
-      { id: nextNoteId(), text: "", imagePreview: null, imageFile: null, existingUrl: null, existingId: null },
-    ]);
-
-  const updateNote = (index, updated) =>
-    setNotes((prev) => prev.map((n, i) => i === index ? updated : n));
-
-  // Fix: revoke object URL for the removed note's image file preview
-  const removeNote = (index) => {
-    setNotes((prev) => {
-      const note = prev[index];
-      if (note.imagePreview && !note.existingUrl) {
-        URL.revokeObjectURL(note.imagePreview);
-      }
-      return prev.filter((_, i) => i !== index);
-    });
-  };
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = (e) => {
     e.preventDefault();
+    setError("");
 
-    if (!form.name.trim())           return alert("Product name is required");
-    if (!form.brand)                 return alert("Brand is required");
-    if (!form.description.trim())    return alert("Description is required");
-    if (form.price === "")           return alert("Price is required");
-    if (form.stock === "")           return alert("Stock is required");
-    if (form.scentType.length === 0) return alert("Select at least one scent type");
-    if (notes.length === 0)          return alert("At least one note is required");
-    if (!product && newImages.length === 0) return alert("At least one product image is required");
+    if (!form.name.trim())         return setError("Product name is required");
+    if (!form.brand)               return setError("Brand is required");
+    if (!form.description.trim())  return setError("Description is required");
+    if (form.scentType.length === 0) return setError("Select at least one scent type");
+    if (form.season.length === 0)  return setError("Select at least one season");
+    if (variants.length === 0)     return setError("Add at least one variant");
 
-    // Validate every note has text
-    for (const n of notes) {
-      if (!n.text.trim()) return alert("All notes must have a text value");
+    for (const v of variants) {
+      if (!v.price || !v.stock) return setError("All variants must have price and stock");
     }
 
-    // Fix: validate every note has an image (new file or existing) — mirrors backend requirement
-    for (const n of notes) {
-      if (!n.imageFile && !n.existingUrl) {
-        return alert(`Note "${n.text || "(empty)"}" is missing an image`);
-      }
-    }
+    const totalNotes = notes.top.length + notes.heart.length + notes.base.length;
+    if (totalNotes === 0) return setError("Add at least one fragrance note");
+
+    const keepImages = existingImages.filter((img) => !img.markedForRemoval);
+    if (!product && newImages.length === 0) return setError("At least one product image is required");
+    if (product && keepImages.length === 0 && newImages.length === 0)
+      return setError("Product must have at least one image");
 
     const fd = new FormData();
-
-    // ── Scalar strings ──────────────────────────────────────────────────────
     fd.append("name",          form.name.trim());
     fd.append("brand",         form.brand);
     fd.append("description",   form.description.trim());
-    fd.append("price",         Number(form.price));
-    fd.append("stock",         Number(form.stock));
     fd.append("gender",        form.gender);
     fd.append("concentration", form.concentration);
-    fd.append("season",        form.season);
+    fd.append("isFeatured",    form.isFeatured  ? "true" : "false");
+    fd.append("isPublished",   form.isPublished ? "true" : "false");
 
-    // ── Booleans — send as strings "true"/"false", backend coerces via toBool
-    fd.append("isFeatured",  form.isFeatured  ? "true" : "false");
-    fd.append("isPublished", form.isPublished ? "true" : "false");
+    fd.append("variants",  JSON.stringify(
+      variants.map((v) => ({ volume: Number(v.volume), price: Number(v.price), stock: Number(v.stock), isAvailable: v.isAvailable }))
+    ));
+    fd.append("scentType", JSON.stringify(form.scentType));
+    fd.append("season",    JSON.stringify(form.season));
+    fd.append("notes",     JSON.stringify(notes));
 
-    // ── scentType — append each value separately so multer gives an array
-    form.scentType.forEach((t) => fd.append("scentType", t));
-
-    // ── Product image files
     newImages.forEach(({ file }) => fd.append("images", file));
 
-    // ── Images to remove (edit mode)
     existingImages
       .filter((img) => img.markedForRemoval)
       .forEach((img) => fd.append("removeImages", img.publicId));
-
-    // ── Notes
-    notes.forEach((n, i) => {
-      fd.append(`notes[${i}][text]`, n.text.trim());
-      if (n.existingUrl) {
-        fd.append(`notes[${i}][existingImageUrl]`, n.existingUrl);
-        fd.append(`notes[${i}][existingImageId]`,  n.existingId ?? "");
-      }
-      if (n.imageFile) {
-        fd.append(`noteImage_${i}`, n.imageFile);
-      }
-    });
 
     onSubmit(fd);
   };
 
   if (!isOpen) return null;
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
+      style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)" }}>
+      <div className="w-full max-w-3xl flex flex-col" style={{ maxHeight: "92vh", background: "var(--color-ink)", border: "0.5px solid var(--color-charcoal)" }}>
 
-        {/* ── Header ──────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 flex-shrink-0">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 shrink-0"
+          style={{ borderBottom: "0.5px solid var(--color-charcoal)" }}>
           <div>
-            <h2 className="text-base font-bold text-gray-900">
-              {product ? "Edit Product" : "Add New Product"}
-            </h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {product ? "Update product details" : "Fill in the details to create a new fragrance"}
+            <p className="text-[9px] tracking-[4px] uppercase"
+              style={{ color: "var(--color-gold)", fontFamily: "var(--font-body)" }}>
+              {product ? "Edit" : "New"} Product
             </p>
+            <h3 style={{ fontFamily: "var(--font-display)", fontSize: "24px", color: "var(--color-pearl)" }}>
+              {product ? "Update Product" : "Add Product"}
+            </h3>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-          >
-            <X size={18} />
-          </button>
+          <button onClick={onClose}
+            style={{ color: "var(--color-smoke)", background: "none", border: "none", cursor: "pointer" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-mist)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-smoke)")}
+          ><X size={16} strokeWidth={1.5} /></button>
         </div>
 
-        {/* ── Scrollable Body ──────────────────────────────────────────── */}
+        {/* Scrollable body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
-          <div className="px-6 py-5 space-y-7">
+          <div className="p-6 flex flex-col gap-8">
 
-            {/* ── Basic Info ────────────────────────────────────────── */}
+            {/* Error */}
+            {error && (
+              <p className="text-xs px-4 py-3"
+                style={{ background: "rgba(160,60,60,0.1)", border: "0.5px solid rgba(160,60,60,0.3)", color: "#c08080", fontFamily: "var(--font-body)" }}>
+                {error}
+              </p>
+            )}
+
+            {/* ── Basic Info ── */}
             <section>
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Basic Info</h3>
+              <SectionTitle>Basic Info</SectionTitle>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
                 <div className="sm:col-span-2">
-                  <Label required>Product Name</Label>
-                  <Input
-                    type="text"
-                    value={form.name}
+                  <LuxLabel required>Product Name</LuxLabel>
+                  <LuxInput type="text" value={form.name}
                     onChange={(e) => set("name", e.target.value)}
-                    placeholder="e.g. Bleu de Chanel"
-                  />
+                    placeholder="e.g. Bleu de Chanel" />
                 </div>
-
                 <div>
-                  <Label required>Brand</Label>
-                  <Select value={form.brand} onChange={(e) => set("brand", e.target.value)}>
-                    <option value="">Select brand…</option>
-                    {brands.map((b) => (
-                      <option key={b._id} value={b._id}>{b.name}</option>
-                    ))}
-                  </Select>
+                  <LuxLabel required>Brand</LuxLabel>
+                  <LuxSelect value={form.brand} onChange={(e) => set("brand", e.target.value)}>
+                    <option value="" style={{ background: "var(--color-ink)" }}>Select brand…</option>
+                    {brands.map((b) => <option key={b._id} value={b._id} style={{ background: "var(--color-ink)" }}>{b.name}</option>)}
+                  </LuxSelect>
                 </div>
-
                 <div>
-                  <Label required>Price (USD)</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.price}
-                    onChange={(e) => set("price", e.target.value)}
-                    placeholder="0.00"
-                  />
+                  <LuxLabel required>Gender</LuxLabel>
+                  <LuxSelect value={form.gender} onChange={(e) => set("gender", e.target.value)}>
+                    {GENDERS.map((g) => <option key={g} style={{ background: "var(--color-ink)" }}>{g}</option>)}
+                  </LuxSelect>
                 </div>
-
                 <div>
-                  <Label required>Stock</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={form.stock}
-                    onChange={(e) => set("stock", e.target.value)}
-                    placeholder="0"
-                  />
+                  <LuxLabel required>Concentration</LuxLabel>
+                  <LuxSelect value={form.concentration} onChange={(e) => set("concentration", e.target.value)}>
+                    {CONCENTRATIONS.map((c) => <option key={c} style={{ background: "var(--color-ink)" }}>{c}</option>)}
+                  </LuxSelect>
                 </div>
-
-                <div>
-                  <Label required>Gender</Label>
-                  <Select value={form.gender} onChange={(e) => set("gender", e.target.value)}>
-                    {GENDERS.map((g) => <option key={g}>{g}</option>)}
-                  </Select>
-                </div>
-
-                <div>
-                  <Label required>Concentration</Label>
-                  <Select value={form.concentration} onChange={(e) => set("concentration", e.target.value)}>
-                    {CONCENTRATIONS.map((c) => <option key={c}>{c}</option>)}
-                  </Select>
-                </div>
-
-                <div>
-                  <Label required>Season</Label>
-                  <Select value={form.season} onChange={(e) => set("season", e.target.value)}>
-                    {SEASONS.map((s) => <option key={s}>{s}</option>)}
-                  </Select>
-                </div>
-
                 <div className="sm:col-span-2">
-                  <Label required>Description</Label>
-                  <textarea
-                    rows={3}
-                    value={form.description}
+                  <LuxLabel required>Description</LuxLabel>
+                  <textarea rows={3} value={form.description}
                     onChange={(e) => set("description", e.target.value)}
                     placeholder="Describe the fragrance…"
-                    className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors resize-none"
+                    style={{ ...inputStyle, resize: "none" }}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "var(--color-gold)")}
+                    onBlur={(e)  => (e.currentTarget.style.borderColor = "var(--color-smoke)")}
                   />
                 </div>
               </div>
             </section>
 
-            {/* ── Scent Type ────────────────────────────────────────── */}
+            {/* ── Variants ── */}
             <section>
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">
-                Scent Type <span className="text-red-400">*</span>
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <SectionTitle>Variants (Size & Price)</SectionTitle>
+                <button type="button" onClick={addVariant}
+                  disabled={usedVolumes.length === ALLOWED_VOLUMES.length}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[9px] tracking-[2px] uppercase transition-all duration-150 disabled:opacity-30"
+                  style={{ color: "var(--color-gold)", border: "0.5px solid rgba(201,168,76,0.3)", background: "rgba(201,168,76,0.06)", fontFamily: "var(--font-body)", borderRadius: 0, cursor: "pointer" }}>
+                  <Plus size={11} strokeWidth={1.5} /> Add Size
+                </button>
+              </div>
+              <div className="flex flex-col gap-2">
+                {variants.map((v, i) => (
+                  <VariantRow key={i} variant={v}
+                    onChange={(updated) => updateVariant(i, updated)}
+                    onRemove={() => removeVariant(i)}
+                    usedVolumes={usedVolumes.filter((_, idx) => idx !== i)}
+                  />
+                ))}
+              </div>
+              {variants.length === 0 && (
+                <button type="button" onClick={addVariant}
+                  className="w-full flex items-center justify-center gap-2 py-6 transition-all duration-200"
+                  style={{ border: "0.5px dashed var(--color-smoke)", color: "var(--color-smoke)", background: "none", cursor: "pointer", fontFamily: "var(--font-body)", fontSize: 12 }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--color-gold)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--color-smoke)")}
+                ><Plus size={14} strokeWidth={1.5} /> Add first variant</button>
+              )}
+            </section>
+
+            {/* ── Scent Type ── */}
+            <section>
+              <SectionTitle>Scent Type *</SectionTitle>
               <div className="flex flex-wrap gap-2">
                 {SCENT_TYPES.map((type) => {
                   const active = form.scentType.includes(type);
                   return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => toggleScentType(type)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all duration-150 ${
-                        active
-                          ? "bg-gray-900 text-white border-gray-900"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-                      }`}
-                    >
+                    <button key={type} type="button" onClick={() => toggleArray("scentType", type)}
+                      className="px-3 py-1.5 text-[10px] tracking-[1px] uppercase transition-all duration-150"
+                      style={{
+                        color:      active ? "var(--color-obsidian)" : "var(--color-mist)",
+                        background: active ? "var(--color-gold)"     : "transparent",
+                        border:     `0.5px solid ${active ? "var(--color-gold)" : "var(--color-charcoal)"}`,
+                        fontFamily: "var(--font-body)", borderRadius: 0, cursor: "pointer",
+                      }}>
                       {type}
                     </button>
                   );
@@ -458,129 +432,144 @@ const ProductModal = ({ isOpen, onClose, product, onSubmit, isLoading }) => {
               </div>
             </section>
 
-            {/* ── Images ────────────────────────────────────────────── */}
+            {/* ── Season ── */}
             <section>
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">
-                Product Images {!product && <span className="text-red-400">*</span>}
-              </h3>
+              <SectionTitle>Season *</SectionTitle>
+              <div className="flex flex-wrap gap-2">
+                {SEASONS.map((s) => {
+                  const active = form.season.includes(s);
+                  return (
+                    <button key={s} type="button" onClick={() => toggleArray("season", s)}
+                      className="px-3 py-1.5 text-[10px] tracking-[1px] uppercase transition-all duration-150"
+                      style={{
+                        color:      active ? "var(--color-obsidian)" : "var(--color-mist)",
+                        background: active ? "var(--color-gold)"     : "transparent",
+                        border:     `0.5px solid ${active ? "var(--color-gold)" : "var(--color-charcoal)"}`,
+                        fontFamily: "var(--font-body)", borderRadius: 0, cursor: "pointer",
+                      }}>
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
 
+            {/* ── Fragrance Notes ── */}
+            <section>
+              <SectionTitle>Fragrance Notes *</SectionTitle>
+              <div className="flex flex-col gap-5">
+                {NOTE_LEVELS.map((level) => (
+                  <div key={level}>
+                    <p className="text-[9px] tracking-[3px] uppercase mb-3"
+                      style={{ color: "var(--color-mist)", fontFamily: "var(--font-body)" }}>
+                      {level.charAt(0).toUpperCase() + level.slice(1)} Notes
+                      <span style={{ color: "var(--color-smoke)" }}> · {notes[level].length} selected</span>
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {allNotes.map((note) => {
+                        const selected = notes[level].includes(note._id);
+                        const inOther  = NOTE_LEVELS.filter((l) => l !== level).some((l) => notes[l].includes(note._id));
+                        return (
+                          <button key={note._id} type="button"
+                            onClick={() => !inOther && toggleNote(level, note._id)}
+                            disabled={inOther}
+                            title={inOther ? "Already used in another level" : ""}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] tracking-[1px] uppercase transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed"
+                            style={{
+                              color:      selected ? "var(--color-obsidian)" : "var(--color-mist)",
+                              background: selected ? "var(--color-gold)"     : "transparent",
+                              border:     `0.5px solid ${selected ? "var(--color-gold)" : "var(--color-charcoal)"}`,
+                              fontFamily: "var(--font-body)", borderRadius: 0, cursor: inOther ? "not-allowed" : "pointer",
+                            }}>
+                            {note.image && (
+                              <img src={note.image} alt="" className="w-3.5 h-3.5 rounded-full object-cover" />
+                            )}
+                            {note.name}
+                          </button>
+                        );
+                      })}
+                      {allNotes.length === 0 && (
+                        <p className="text-[10px]" style={{ color: "var(--color-smoke)", fontFamily: "var(--font-body)" }}>
+                          No notes found — add notes in the Notes section first.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* ── Images ── */}
+            <section>
+              <SectionTitle>Product Images {!product && "*"}</SectionTitle>
               {(existingImages.length > 0 || newImages.length > 0) && (
-                <div className="flex flex-wrap gap-3 mb-3">
+                <div className="flex flex-wrap gap-3 mb-4">
                   {existingImages.map((img, i) => (
-                    <div key={img.publicId ?? i} className="relative group">
-                      <img
-                        src={img.url}
-                        alt=""
-                        className={`w-20 h-20 object-cover rounded-xl border-2 transition-all ${
-                          img.markedForRemoval ? "opacity-40 border-red-400 grayscale" : "border-gray-100"
-                        }`}
-                      />
+                    <div key={img.publicId ?? i} className="relative">
+                      <div className="overflow-hidden"
+                        style={{ width: 72, height: 72, border: `0.5px solid ${img.markedForRemoval ? "rgba(160,60,60,0.5)" : "var(--color-charcoal)"}`, opacity: img.markedForRemoval ? 0.4 : 1 }}>
+                        <img src={img.url} alt="" className="w-full h-full object-cover" />
+                      </div>
                       {img.isPrimary && !img.markedForRemoval && (
-                        <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-amber-400 text-white px-1.5 py-0.5 rounded-full leading-none">
-                          Primary
+                        <span className="absolute bottom-1 left-1 text-[8px] tracking-[1px] uppercase px-1 py-0.5"
+                          style={{ background: "var(--color-gold)", color: "var(--color-obsidian)", fontFamily: "var(--font-body)" }}>
+                          Main
                         </span>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => toggleExistingImageRemoval(i)}
-                        className={`absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs transition-colors ${
-                          img.markedForRemoval ? "bg-gray-400 hover:bg-gray-500" : "bg-red-500 hover:bg-red-600"
-                        }`}
-                        title={img.markedForRemoval ? "Keep image" : "Remove image"}
-                      >
-                        <X size={10} />
+                      <button type="button" onClick={() => toggleExistingRemoval(i)}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full"
+                        style={{ background: img.markedForRemoval ? "var(--color-smoke)" : "#c08080", border: "1.5px solid var(--color-ink)", cursor: "pointer" }}>
+                        <X size={9} style={{ color: "#fff" }} />
                       </button>
                     </div>
                   ))}
                   {newImages.map((img, i) => (
                     <div key={i} className="relative">
-                      <img src={img.preview} alt="" className="w-20 h-20 object-cover rounded-xl border-2 border-blue-300" />
-                      <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-blue-500 text-white px-1.5 py-0.5 rounded-full leading-none">
+                      <div className="overflow-hidden"
+                        style={{ width: 72, height: 72, border: "0.5px solid rgba(201,168,76,0.4)" }}>
+                        <img src={img.preview} alt="" className="w-full h-full object-cover" />
+                      </div>
+                      <span className="absolute bottom-1 left-1 text-[8px] tracking-[1px] uppercase px-1 py-0.5"
+                        style={{ background: "rgba(201,168,76,0.8)", color: "var(--color-obsidian)", fontFamily: "var(--font-body)" }}>
                         New
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => removeNewImage(i)}
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white transition-colors"
-                      >
-                        <X size={10} />
+                      <button type="button" onClick={() => removeNewImage(i)}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 flex items-center justify-center rounded-full"
+                        style={{ background: "#c08080", border: "1.5px solid var(--color-ink)", cursor: "pointer" }}>
+                        <X size={9} style={{ color: "#fff" }} />
                       </button>
                     </div>
                   ))}
                 </div>
               )}
-
               <ImageDropZone onFiles={handleNewImages} />
             </section>
 
-            {/* ── Notes ─────────────────────────────────────────────── */}
+            {/* ── Visibility ── */}
             <section>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                  Fragrance Notes <span className="text-red-400">*</span>
-                </h3>
-                <button
-                  type="button"
-                  onClick={addNote}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
-                >
-                  <Plus size={13} /> Add Note
-                </button>
-              </div>
-
-              {notes.length === 0 ? (
-                <div
-                  onClick={addNote}
-                  className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-gray-300 transition-colors text-gray-400"
-                >
-                  <Plus size={20} className="mb-1" />
-                  <p className="text-sm font-medium">Add your first note</p>
-                  <p className="text-xs mt-0.5">e.g. Bergamot, Sandalwood, Musk</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {/* Fix: use stable note.id as key instead of array index */}
-                  {notes.map((note, i) => (
-                    <NoteRow key={note.id} note={note} index={i} onChange={updateNote} onRemove={removeNote} />
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {/* ── Visibility ────────────────────────────────────────── */}
-            <section>
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Visibility</h3>
+              <SectionTitle>Visibility</SectionTitle>
               <div className="flex flex-col sm:flex-row gap-3">
                 {[
-                  { key: "isPublished", label: "Published",  sub: "Visible to customers"      },
-                  { key: "isFeatured",  label: "Featured",   sub: "Shown in featured section"  },
+                  { key: "isPublished", label: "Published",  sub: "Visible to customers"     },
+                  { key: "isFeatured",  label: "Featured",   sub: "Shown in featured section" },
                 ].map(({ key, label, sub }) => (
-                  <label
-                    key={key}
-                    className={`flex items-center gap-3 flex-1 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                      form[key]
-                        ? "border-gray-900 bg-gray-900 text-white"
-                        : "border-gray-200 bg-gray-50 hover:border-gray-300"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={form[key]}
-                      onChange={(e) => set(key, e.target.checked)}
-                      className="sr-only"
-                    />
-                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      form[key] ? "border-white bg-white" : "border-gray-300"
-                    }`}>
-                      {form[key] && (
-                        <svg viewBox="0 0 12 12" className="w-2.5 h-2.5 text-gray-900 fill-current">
-                          <path d="M10 3L5 8.5 2 5.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-                        </svg>
-                      )}
+                  <label key={key}
+                    className="flex items-center gap-3 flex-1 p-4 cursor-pointer transition-all duration-200"
+                    style={{
+                      background: form[key] ? "rgba(201,168,76,0.08)" : "transparent",
+                      border:     `0.5px solid ${form[key] ? "var(--color-gold)" : "var(--color-charcoal)"}`,
+                    }}>
+                    <input type="checkbox" checked={form[key]}
+                      onChange={(e) => set(key, e.target.checked)} className="sr-only" />
+                    <div className="w-4 h-4 flex items-center justify-center shrink-0"
+                      style={{ background: form[key] ? "var(--color-gold)" : "transparent", border: `0.5px solid ${form[key] ? "var(--color-gold)" : "var(--color-smoke)"}` }}>
+                      {form[key] && <svg viewBox="0 0 12 12" className="w-2.5 h-2.5" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="var(--color-obsidian)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>}
                     </div>
                     <div>
-                      <p className={`text-sm font-semibold ${form[key] ? "text-white" : "text-gray-900"}`}>{label}</p>
-                      <p className={`text-xs mt-0.5 ${form[key] ? "text-white/70" : "text-gray-400"}`}>{sub}</p>
+                      <p className="text-xs font-medium" style={{ color: form[key] ? "var(--color-gold)" : "var(--color-pearl)", fontFamily: "var(--font-body)" }}>{label}</p>
+                      <p className="text-[10px] mt-0.5" style={{ color: "var(--color-smoke)", fontFamily: "var(--font-body)" }}>{sub}</p>
                     </div>
                   </label>
                 ))}
@@ -589,24 +578,21 @@ const ProductModal = ({ isOpen, onClose, product, onSubmit, isLoading }) => {
 
           </div>
 
-          {/* ── Footer ──────────────────────────────────────────────────── */}
-          <div className="flex gap-3 px-6 py-5 border-t border-gray-100 bg-gray-50/50 sticky bottom-0">
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-colors font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading && <Loader2 size={15} className="animate-spin" />}
-              {isLoading ? "Saving…" : product ? "Save Changes" : "Create Product"}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isLoading}
-              className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-semibold text-sm"
-            >
-              Cancel
-            </button>
+          {/* Footer */}
+          <div className="flex gap-3 px-6 py-5 shrink-0"
+            style={{ borderTop: "0.5px solid var(--color-charcoal)", background: "var(--color-obsidian)" }}>
+            <button type="submit" disabled={isLoading}
+              className="flex-1 py-3 text-[10px] tracking-[2px] uppercase transition-all duration-200 disabled:opacity-50"
+              style={{ background: "var(--color-gold)", color: "var(--color-obsidian)", border: "none", fontFamily: "var(--font-body)", borderRadius: 0, cursor: "pointer" }}
+              onMouseEnter={(e) => { if (!isLoading) e.currentTarget.style.background = "var(--color-gold-light)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "var(--color-gold)"; }}
+            >{isLoading ? "Saving…" : product ? "Save Changes" : "Create Product"}</button>
+            <button type="button" onClick={onClose} disabled={isLoading}
+              className="px-8 py-3 text-[10px] tracking-[2px] uppercase transition-all duration-200"
+              style={{ background: "transparent", color: "var(--color-mist)", border: "0.5px solid var(--color-charcoal)", fontFamily: "var(--font-body)", borderRadius: 0, cursor: "pointer" }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--color-smoke)"; e.currentTarget.style.color = "var(--color-pearl)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--color-charcoal)"; e.currentTarget.style.color = "var(--color-mist)"; }}
+            >Cancel</button>
           </div>
         </form>
       </div>
